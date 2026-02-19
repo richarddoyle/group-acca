@@ -2,8 +2,36 @@ import SwiftUI
 
 
 struct ContentView: View {
-    @State private var groups: [BettingGroup] = []
     @State private var selectedGroup: BettingGroup?
+    
+    @State private var isAuthenticated = false
+    
+    var body: some View {
+        Group {
+            if isAuthenticated {
+                MainAppView(selectedGroup: $selectedGroup, isAuthenticated: $isAuthenticated)
+            } else {
+                LoginView(isAuthenticated: $isAuthenticated)
+            }
+        }
+        .task {
+            await checkAuthStatus()
+        }
+    }
+    
+    private func checkAuthStatus() async {
+        if SupabaseService.shared.currentUser != nil {
+            isAuthenticated = true
+        } else {
+            isAuthenticated = false
+        }
+    }
+}
+
+struct MainAppView: View {
+    @Binding var selectedGroup: BettingGroup?
+    @Binding var isAuthenticated: Bool
+    @State private var groups: [BettingGroup] = []
     @State private var showingCreateGroup = false
     @State private var showingJoinGroup = false
     @State private var isLoading = false
@@ -32,7 +60,7 @@ struct ContentView: View {
             }
             
             // Tab 3: Profile
-            ProfileView(selectedGroup: $selectedGroup)
+            ProfileView(selectedGroup: $selectedGroup, isAuthenticated: $isAuthenticated)
                 .tabItem {
                     Label("Profile", systemImage: "person.circle")
                 }

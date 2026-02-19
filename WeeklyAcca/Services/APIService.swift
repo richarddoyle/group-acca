@@ -59,7 +59,9 @@ class APIService {
             let mockOdds = MatchOdds(
                 home: Double.random(in: 1.5...4.0).rounded(toPlaces: 2),
                 draw: Double.random(in: 2.5...4.5).rounded(toPlaces: 2),
-                away: Double.random(in: 1.5...5.0).rounded(toPlaces: 2)
+                away: Double.random(in: 1.5...5.0).rounded(toPlaces: 2),
+                bttsYes: Double.random(in: 1.5...2.2).rounded(toPlaces: 2),
+                bttsNo: Double.random(in: 1.5...2.2).rounded(toPlaces: 2)
             )
             
             let fixture = Fixture(

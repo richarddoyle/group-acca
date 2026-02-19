@@ -18,6 +18,8 @@ struct MatchOdds: Hashable {
     let home: Double
     let draw: Double
     let away: Double
+    var bttsYes: Double?
+    var bttsNo: Double?
 }
 
 struct Fixture: Identifiable, Hashable {
@@ -91,9 +93,11 @@ actor MockData {
                     date: fixtureDate,
                     competition: comp,
                     odds: MatchOdds(
-                        home: Double.random(in: 1.5...5.0),
-                        draw: Double.random(in: 2.5...4.5),
-                        away: Double.random(in: 1.5...5.0)
+                        home: Double.random(in: 1.5...5.0).rounded(toPlaces: 2),
+                        draw: Double.random(in: 2.5...4.5).rounded(toPlaces: 2),
+                        away: Double.random(in: 1.5...5.0).rounded(toPlaces: 2),
+                        bttsYes: Double.random(in: 1.5...2.2).rounded(toPlaces: 2),
+                        bttsNo: Double.random(in: 1.5...2.2).rounded(toPlaces: 2)
                     )
                 )
                 compsFixtures.append(fixture)

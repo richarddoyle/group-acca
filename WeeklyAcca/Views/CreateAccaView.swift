@@ -21,7 +21,7 @@ struct CreateAccaView: View {
         LeagueConstants.supportedLeagues.map { $0.name }
     }
     
-    @State private var allowEarlyKickoffs: Bool = true
+    // @State private var allowEarlyKickoffs: Bool = true // Removed
     
     var body: some View {
         NavigationStack {
@@ -33,6 +33,11 @@ struct CreateAccaView: View {
                 
                 Section("Date Range") {
                     DatePicker("Start Date", selection: $startDate, displayedComponents: .date)
+                    DatePicker("Lock Time", selection: $startDate, displayedComponents: .hourAndMinute)
+                    Text("Players must submit their entries by this time. This will be shown in their local time.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    
                     DatePicker("End Date", selection: $endDate, in: startDate..., displayedComponents: .date)
                 }
                 
@@ -44,7 +49,7 @@ struct CreateAccaView: View {
                     }
                     
                     if selectedSport == "Football" {
-                        Toggle("Allow Early Kickoffs (12:30)", isOn: $allowEarlyKickoffs)
+                        // Toggle("Allow Early Kickoffs (12:30)", isOn: $allowEarlyKickoffs) // Removed
                         
                         NavigationLink {
                             List {
@@ -150,7 +155,7 @@ struct CreateAccaView: View {
                     endDate: endDate,
                     sport: selectedSport,
                     selectedLeagues: Array(selectedLeagues),
-                    allowEarlyKickoffs: allowEarlyKickoffs,
+                    // allowEarlyKickoffs removed
                     isSettled: false,
                     status: .pending
                 )

@@ -9,6 +9,7 @@ struct MatchSelectionView: View {
     @State private var fixtures: [Competition: [Fixture]] = [:]
     @State private var isLoading = false
     @State private var errorMessage: String?
+    @State private var selectedFixture: Fixture? // For sheet presentation
     
     init(selection: Selection, week: Week? = nil) {
         self._selection = State(initialValue: selection)
@@ -119,8 +120,8 @@ struct MatchSelectionView: View {
                             ForEach(filteredCompetitions, id: \.self) { competition in
                                 Section(header: Text(competition.name)) {
                                     ForEach(fixtures[competition] ?? []) { fixture in
-                                        FixtureRow(fixture: fixture) { selectedTeam, odds in
-                                            selectMatch(fixture: fixture, team: selectedTeam, odds: odds)
+                                        FixtureRow(fixture: fixture) {
+                                            selectedFixture = fixture
                                         }
                                     }
                                 }
@@ -132,7 +133,11 @@ struct MatchSelectionView: View {
             }
             .navigationTitle("Select Match")
             .navigationBarTitleDisplayMode(.inline)
-            // Cancel button removed as per user request (use Back button)
+            .sheet(item: $selectedFixture) { fixture in
+                MarketSelectionView(fixture: fixture) { team, odds in
+                    selectMatch(fixture: fixture, team: team, odds: odds)
+                }
+            }
             .onAppear {
                 // Ensure selectedDate is within range
                 if let week = week {
@@ -184,7 +189,11 @@ struct MatchSelectionView: View {
                 selection.teamName = team
                 selection.league = fixture.competition.name
                 selection.odds = odds
-                selection.outcome = .pending // Reset outcome if changing match
+                selection.outcome = .pending
+                selection.kickoffTime = fixture.date
+                selection.matchStatus = "NS" // Not Started default
+                selection.homeScore = nil
+                selection.awayScore = nil
                 
                 // Save to Supabase
                 try await SupabaseService.shared.saveSelection(selection)
@@ -248,14 +257,10 @@ struct DateTabButton: View {
 // Subview for Fixture Row
 struct FixtureRow: View {
     let fixture: Fixture
-    let onSelect: (String, Double) -> Void
-    
-    @State private var showingOutcomeSheet = false
+    let action: () -> Void
     
     var body: some View {
-        Button {
-            showingOutcomeSheet = true
-        } label: {
+        Button(action: action) {
             VStack(spacing: 8) {
                 Text(fixture.timeString)
                     .font(.caption)
@@ -286,22 +291,5 @@ struct FixtureRow: View {
             .padding(.vertical, 4)
         }
         .buttonStyle(.plain)
-        .confirmationDialog("Select Outcome", isPresented: $showingOutcomeSheet, titleVisibility: .visible) {
-            Button("\(fixture.homeTeam) to Win @ \(fixture.odds.home.formatted())") {
-                onSelect(fixture.homeTeam, fixture.odds.home)
-            }
-            
-            Button("Draw @ \(fixture.odds.draw.formatted())") {
-                onSelect("Draw - \(fixture.homeTeam) vs \(fixture.awayTeam)", fixture.odds.draw)
-            }
-            
-            Button("\(fixture.awayTeam) to Win @ \(fixture.odds.away.formatted())") {
-                onSelect(fixture.awayTeam, fixture.odds.away)
-            }
-            
-            Button("Cancel", role: .cancel) { }
-        } message: {
-            Text("\(fixture.homeTeam) vs \(fixture.awayTeam)")
-        }
     }
 }

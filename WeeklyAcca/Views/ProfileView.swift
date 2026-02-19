@@ -3,6 +3,7 @@ import SwiftUI
 
 struct ProfileView: View {
     @Binding var selectedGroup: BettingGroup?
+    @Binding var isAuthenticated: Bool
     
     @State private var groups: [BettingGroup] = []
     @State private var showingCreateGroup = false
@@ -54,8 +55,16 @@ struct ProfileView: View {
                         .foregroundStyle(.secondary)
                     
                     Button("Sign Out") {
-                        // TODO: Implement Sign Out
-                        // SupabaseService.shared.signOut()
+                        Task {
+                            do {
+                                try await SupabaseService.shared.signOut()
+                                await MainActor.run {
+                                    isAuthenticated = false
+                                }
+                            } catch {
+                                print("Error signing out: \(error)")
+                            }
+                        }
                     }
                     .foregroundStyle(.red)
                 }

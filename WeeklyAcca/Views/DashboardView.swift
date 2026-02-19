@@ -173,7 +173,7 @@ struct GroupWeeksView: View {
                                     .foregroundStyle(.secondary)
                             }
                             Spacer()
-                            StatusBadge(status: week.status)
+                            WeekStatusBadge(week: week)
                         }
                         .padding(.vertical, 4)
                     }
@@ -186,6 +186,32 @@ struct GroupWeeksView: View {
     
     private func deleteWeeks(offsets: IndexSet) {
         // TODO: Implement delete
+    }
+}
+
+struct WeekStatusBadge: View {
+    let week: Week
+    
+    var body: some View {
+        if week.status == .pending {
+            if week.isOpen {
+                Text("Open")
+                    .font(.caption.bold())
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(Color.blue.opacity(0.15), in: Capsule())
+                    .foregroundStyle(Color.blue)
+            } else {
+                Text("In Progress")
+                    .font(.caption.bold())
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(Color.orange.opacity(0.15), in: Capsule())
+                    .foregroundStyle(Color.orange)
+            }
+        } else {
+            StatusBadge(status: week.status)
+        }
     }
 }
 
@@ -252,12 +278,11 @@ struct WeekDetailView: View {
     
     var body: some View {
         List {
-            // MARK: - Summary Section
             Section("Week \(week.weekNumber) Summary") {
                 HStack {
                     Text("Status")
                     Spacer()
-                    StatusBadge(status: week.status)
+                    WeekStatusBadge(week: week)
                 }
                 HStack {
                     Text("Total Stake")
@@ -277,8 +302,18 @@ struct WeekDetailView: View {
             // MARK: - My Pick Section
             Section("My Pick") {
                 if let selection = mySelection {
-                    NavigationLink(destination: MatchSelectionView(selection: selection, week: week)) {
-                        HStack {
+                    // Only allow navigation if Week is open OR if we just want to view details (we can disable editing inside)
+                    // Better UX: Always navigate, but handle "Edit" vs "View" inside Detail or change destination.
+                    // For now, let's keep it simple: If Locked, show row but maybe change destination or disable interaction if it was just an edit flow.
+                    // Actually, the requirement says "users can no longer edit their picks".
+                    
+                    if week.isOpen {
+                        NavigationLink(destination: MatchSelectionView(selection: selection, week: week)) {
+                            SelectionRow(selection: selection, isLocked: false)
+                        }
+                    } else {
+                        // Locked view
+                         HStack {
                             VStack(alignment: .leading) {
                                 Text(selection.teamName)
                                     .font(.headline)
@@ -287,26 +322,40 @@ struct WeekDetailView: View {
                                     .foregroundStyle(.secondary)
                             }
                             Spacer()
-                            if selection.outcome == .pending {
-                                Text("Edit")
-                                    .foregroundStyle(.blue)
+                            if let status = selection.matchStatus, status != "NS" {
+                                Text(status)
+                                    .font(.caption.bold())
+                                    .foregroundStyle(.secondary)
+                            }
+                            
+                            // Scores
+                            if let home = selection.homeScore, let away = selection.awayScore {
+                                Text("\(home) - \(away)")
+                                    .font(.headline)
+                                    .monospacedDigit()
                             } else {
                                 StatusBadge(status: mapOutcomeToStatus(selection.outcome))
                             }
                         }
                     }
                 } else {
-                    Button {
-                        createMyPick()
-                    } label: {
-                        HStack {
-                            Text("Make Your Pick")
-                                .foregroundStyle(Color.blue)
-                            Spacer()
-                            Text("Pick needed")
-                                .foregroundStyle(.secondary)
-                                .italic()
+                    if week.isOpen {
+                        Button {
+                            createMyPick()
+                        } label: {
+                            HStack {
+                                Text("Make Your Pick")
+                                    .foregroundStyle(Color.blue)
+                                Spacer()
+                                Text("Pick needed")
+                                    .foregroundStyle(.secondary)
+                                    .italic()
+                            }
                         }
+                    } else {
+                         Text("Locked - no pick made")
+                            .foregroundStyle(.secondary)
+                            .italic()
                     }
                 }
             }
@@ -395,4 +444,67 @@ struct WeekDetailView: View {
 struct MemberSelectionDisplay {
     let member: Member
     let selection: Selection?
+}
+
+struct SelectionRow: View {
+    let selection: Selection
+    let isLocked: Bool
+    
+    var body: some View {
+        HStack {
+            VStack(alignment: .leading) {
+                Text(selection.teamName)
+                    .font(.headline)
+                Text("@ \(selection.odds.formatted())")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+            
+            if let status = selection.matchStatus, status != "NS" {
+                // Match is Live or Finished
+                VStack(alignment: .trailing) {
+                    Text(status)
+                        .font(.caption.bold())
+                        .foregroundStyle(.secondary)
+                    
+                    if let home = selection.homeScore, let away = selection.awayScore {
+                         Text("\(home) - \(away)")
+                            .font(.headline)
+                            .monospacedDigit()
+                    }
+                }
+            } else {
+                // Pre-match or no status info
+                if selection.outcome == .pending {
+                    if isLocked {
+                        // Locked & Pending & NS -> Show Kickoff Time
+                        if let kickoff = selection.kickoffTime {
+                            Text(kickoff, style: .time)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        } else {
+                            Text("Not Started")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    } else {
+                        // Open -> Pending Badge
+                        StatusBadge(status: .pending)
+                    }
+                } else {
+                    StatusBadge(status: mapOutcomeToStatus(selection.outcome))
+                }
+            }
+        }
+    }
+    
+    private func mapOutcomeToStatus(_ outcome: SelectionOutcome) -> WeekStatus {
+        switch outcome {
+        case .pending: return .pending
+        case .win: return .won
+        case .loss: return .lost
+        case .void: return .pending 
+        }
+    }
 }

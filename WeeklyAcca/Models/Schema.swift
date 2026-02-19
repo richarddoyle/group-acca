@@ -1,4 +1,6 @@
 import Foundation
+import SwiftUI
+import SwiftUI
 
 // MARK: - App Models (Supabase)
 
@@ -19,6 +21,7 @@ struct BettingGroup: Codable, Identifiable {
     let name: String
     let stakePerPerson: Double
     let joinCode: String
+    let adminId: UUID
     let createdAt: Date
     
     enum CodingKeys: String, CodingKey {
@@ -26,6 +29,7 @@ struct BettingGroup: Codable, Identifiable {
         case name
         case stakePerPerson = "stake_per_person"
         case joinCode = "join_code"
+        case adminId = "admin_id"
         case createdAt = "created_at"
     }
 }
@@ -73,7 +77,7 @@ struct Week: Codable, Identifiable {
     let endDate: Date
     let sport: String
     let selectedLeagues: [String]
-    let allowEarlyKickoffs: Bool
+    // let allowEarlyKickoffs: Bool // Removed
     let isSettled: Bool
     let status: WeekStatus
     
@@ -86,7 +90,7 @@ struct Week: Codable, Identifiable {
         case endDate = "end_date"
         case sport
         case selectedLeagues = "selected_leagues"
-        case allowEarlyKickoffs = "allow_early_kickoffs"
+        // case allowEarlyKickoffs = "allow_early_kickoffs" // Removed
         case isSettled = "is_settled"
         case status
     }
@@ -100,6 +104,10 @@ struct Selection: Codable, Identifiable, Hashable {
     var league: String
     var outcome: SelectionOutcome 
     var odds: Double
+    var kickoffTime: Date?
+    var homeScore: Int?
+    var awayScore: Int?
+    var matchStatus: String? // e.g., "NS", "FT"
     
     enum CodingKeys: String, CodingKey {
         case id
@@ -109,5 +117,19 @@ struct Selection: Codable, Identifiable, Hashable {
         case league
         case outcome
         case odds
+        case kickoffTime = "kickoff_time"
+        case homeScore = "home_score"
+        case awayScore = "away_score"
+        case matchStatus = "match_status"
+    }
+}
+
+extension Week {
+    var isOpen: Bool {
+        Date() < startDate
+    }
+    
+    var isLocked: Bool {
+        !isOpen
     }
 }
