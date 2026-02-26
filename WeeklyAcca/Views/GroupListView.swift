@@ -8,6 +8,10 @@ struct GroupListView: View {
     @State private var showingJoinGroup = false
     @State private var isLoading = false
     
+    @State private var errorTitle = ""
+    @State private var errorMessage = ""
+    @State private var showingError = false
+    
     var body: some View {
         NavigationStack {
             List {
@@ -37,7 +41,7 @@ struct GroupListView: View {
                             }
                             .buttonStyle(.plain)
                         }
-                        // .onDelete(perform: deleteGroups) // TODO: Implement delete
+                        .onDelete(perform: deleteGroups)
                     }
                 } header: {
                     Text("Your Groups")
@@ -56,26 +60,41 @@ struct GroupListView: View {
             .refreshable {
                 await loadGroups()
             }
-            .sheet(isPresented: $showingCreateGroup) {
-                CreateGroupView { groupName, userName in
-                    Task {
-                        do {
-                            // 1. Create Group
-                            let newGroup = try await SupabaseService.shared.createGroup(name: groupName, stake: 10.0)
-                            
-                            // 2. Add creator as member
-                            // We need to implement addMember in service or use join logic logic
-                            // Actually createGroup should probably add the creator automatically or we do it here
-                            let _ = try await SupabaseService.shared.joinGroup(code: newGroup.joinCode, userName: userName, userId: SupabaseService.shared.currentUserId)
-                            
-                            await loadGroups()
-                            selectedGroup = newGroup
-                        } catch {
-                            print("Error creating group: \(error)")
+            .alert(errorTitle, isPresented: $showingError) {
+                Button("OK", role: .cancel) { }
+            } message: {
+                Text(errorMessage)
+            }
+        .sheet(isPresented: $showingCreateGroup) {
+            CreateGroupView { groupName in
+                Task {
+                    do {
+                        let userId = SupabaseService.shared.currentUserId
+                        let profile = try await SupabaseService.shared.fetchProfile(id: userId)
+                        // 1. Create Group (now also automatically adds creator as admin)
+                        let newGroup = try await SupabaseService.shared.createGroup(name: groupName, stake: 5.0)
+                        
+                        // 2. Update UI on Main Thread
+                        await MainActor.run {
+                            self.groups.insert(newGroup, at: 0) // Optimistic add to top
+                            self.selectedGroup = newGroup       // Trigger navigation
+                            self.showingCreateGroup = false     // Dismiss sheet
                         }
+                        
+                        // Full refresh in background
+                        await loadGroups()
+                        
+                    } catch {
+                        await MainActor.run {
+                            self.errorTitle = "Failed to Create Group"
+                            self.errorMessage = error.localizedDescription
+                            self.showingError = true
+                        }
+                        print("Error creating group: \(error)")
                     }
                 }
             }
+        }
             .sheet(isPresented: $showingJoinGroup) {
                 JoinGroupView(onJoinSuccess: {
                     Task {
@@ -102,6 +121,24 @@ struct GroupListView: View {
         } catch {
             print("Error loading groups: \(error)")
             isLoading = false
+        }
+    }
+    
+    private func deleteGroups(at offsets: IndexSet) {
+        let groupsToRemove = offsets.map { groups[$0] }
+        
+        // Optimistically update UI
+        groups.remove(atOffsets: offsets)
+        
+        Task {
+            for group in groupsToRemove {
+                do {
+                    try await SupabaseService.shared.deleteGroup(id: group.id)
+                } catch {
+                    print("Error deleting group: \(error)")
+                    // Optionally: rollback UI or show error
+                }
+            }
         }
     }
 }

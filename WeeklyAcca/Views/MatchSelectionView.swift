@@ -112,30 +112,42 @@ struct MatchSelectionView: View {
                         ProgressView("Loading fixtures...")
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
                     } else if let error = errorMessage {
-                        ContentUnavailableView("Error Loading Fixtures", systemImage: "exclamationmark.triangle", description: Text(error))
+                        VStack(spacing: 20) {
+                            ContentUnavailableView("Selection Error", systemImage: "exclamationmark.triangle", description: Text(error))
+                            Button("Try Again") {
+                                errorMessage = nil
+                                loadFixtures()
+                            }
+                            .buttonStyle(.bordered)
+                        }
                     } else if filteredFixtures.isEmpty {
                         ContentUnavailableView("No Fixtures", systemImage: "soccerball", description: Text("No matches found for this date in your selected leagues."))
                     } else {
                         List {
                             ForEach(filteredCompetitions, id: \.self) { competition in
-                                Section(header: Text(competition.name)) {
-                                    ForEach(fixtures[competition] ?? []) { fixture in
-                                        FixtureRow(fixture: fixture) {
+                                Section(header: Text(competition.name).font(.subheadline.bold())) {
+                                    ForEach((fixtures[competition] ?? []).filter { $0.status == "NS" && $0.date > Date() }) { fixture in
+                                        FixtureCard(fixture: fixture) {
                                             selectedFixture = fixture
                                         }
+                                        .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+                                        .listRowBackground(Color.clear)
+                                        .listRowSeparator(.hidden)
                                     }
                                 }
                             }
                         }
                         .listStyle(.grouped)
+                        .scrollContentBackground(.hidden)
+                        .background(Color(.systemGroupedBackground))
                     }
                 }
             }
             .navigationTitle("Select Match")
             .navigationBarTitleDisplayMode(.inline)
-            .sheet(item: $selectedFixture) { fixture in
-                MarketSelectionView(fixture: fixture) { team, odds in
-                    selectMatch(fixture: fixture, team: team, odds: odds)
+            .fullScreenCover(item: $selectedFixture) { fixture in
+                MarketSelectionView(fixture: fixture) { team, odds, logo in
+                    selectMatch(fixture: fixture, team: team, odds: odds, logo: logo)
                 }
             }
             .onAppear {
@@ -164,23 +176,55 @@ struct MatchSelectionView: View {
         
         Task {
             do {
-                let newFixtures = try await APIService.shared.fetchFixtures(date: selectedDate)
-                await MainActor.run {
-                    self.fixtures = newFixtures
-                    self.isLoading = false
+                if let allowedLeagues = week?.selectedLeagues, !allowedLeagues.isEmpty {
+                    let leagueIDs = allowedLeagues.compactMap { LeagueConstants.getID(for: $0) }
+                    
+                    if leagueIDs.isEmpty {
+                        await MainActor.run {
+                            self.fixtures = [:]
+                            self.isLoading = false
+                        }
+                        return
+                    }
+                    
+                    var combinedFixtures: [Competition: [Fixture]] = [:]
+                    
+                    try await withThrowingTaskGroup(of: [Competition: [Fixture]].self) { group in
+                        for id in leagueIDs {
+                            group.addTask {
+                                return try await APIService.shared.fetchFixtures(date: selectedDate, leagueId: id)
+                            }
+                        }
+                        
+                        for try await result in group {
+                            for (comp, fixtures) in result {
+                                combinedFixtures[comp] = fixtures
+                            }
+                        }
+                    }
+                    
+                    await MainActor.run {
+                        self.fixtures = combinedFixtures
+                        self.isLoading = false
+                    }
+                } else {
+                    // Fallback to fetching all (though likely truncated by API)
+                    let newFixtures = try await APIService.shared.fetchFixtures(date: selectedDate)
+                    await MainActor.run {
+                        self.fixtures = newFixtures
+                        self.isLoading = false
+                    }
                 }
             } catch {
                 await MainActor.run {
                     self.errorMessage = error.localizedDescription
                     self.isLoading = false
-                    // Optional: Fallback to mock data if API fails completely
-                    // self.fixtures = MockData.shared.getFixtures(for: selectedDate)
                 }
             }
         }
     }
     
-    private func selectMatch(fixture: Fixture, team: String, odds: Double) {
+    private func selectMatch(fixture: Fixture, team: String, odds: Double, logo: String?) {
         isLoading = true
         
         Task {
@@ -192,8 +236,12 @@ struct MatchSelectionView: View {
                 selection.outcome = .pending
                 selection.kickoffTime = fixture.date
                 selection.matchStatus = "NS" // Not Started default
+                selection.teamLogoUrl = logo
                 selection.homeScore = nil
                 selection.awayScore = nil
+                selection.homeTeamName = fixture.homeTeam
+                selection.awayTeamName = fixture.awayTeam
+                selection.fixtureId = fixture.apiId
                 
                 // Save to Supabase
                 try await SupabaseService.shared.saveSelection(selection)
@@ -254,41 +302,56 @@ struct DateTabButton: View {
     }
 }
 
-// Subview for Fixture Row
-struct FixtureRow: View {
+// Subview for Fixture Card
+struct FixtureCard: View {
     let fixture: Fixture
     let action: () -> Void
     
     var body: some View {
         Button(action: action) {
-            VStack(spacing: 8) {
+            VStack(spacing: 12) {
                 Text(fixture.timeString)
-                    .font(.caption)
+                    .font(.caption2.bold())
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 
-                HStack {
+                HStack(spacing: 12) {
                     // Home
-                    Text(fixture.homeTeam)
-                        .font(.body)
-                        .fontWeight(.medium)
-                        .frame(maxWidth: .infinity, alignment: .trailing)
+                    VStack(spacing: 8) {
+                        ClubBadge(url: fixture.homeLogoUrl, size: 44)
+                        Text(fixture.homeTeam)
+                            .font(.subheadline.bold())
+                            .multilineTextAlignment(.center)
+                            .lineLimit(1)
+                    }
+                    .frame(maxWidth: .infinity)
                     
                     // VS
-                    Text("vs")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .padding(.horizontal, 4)
+                    VStack(spacing: 4) {
+                        Text("VS")
+                            .font(.system(size: 14, weight: .black))
+                            .italic()
+                            .foregroundStyle(.blue.opacity(0.8))
+                        
+                        // Small divider lines
+                        Rectangle().fill(.blue.opacity(0.2)).frame(width: 20, height: 1)
+                    }
+                    .frame(width: 40)
                     
                     // Away
-                    Text(fixture.awayTeam)
-                        .font(.body)
-                        .fontWeight(.medium)
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                    VStack(spacing: 8) {
+                        ClubBadge(url: fixture.awayLogoUrl, size: 44)
+                        Text(fixture.awayTeam)
+                            .font(.subheadline.bold())
+                            .multilineTextAlignment(.center)
+                            .lineLimit(1)
+                    }
+                    .frame(maxWidth: .infinity)
                 }
-                .padding(.vertical, 4)
             }
-            .padding(.vertical, 4)
+            .padding(16)
+            .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16))
+            .shadow(color: .black.opacity(0.04), radius: 8, x: 0, y: 4)
         }
         .buttonStyle(.plain)
     }

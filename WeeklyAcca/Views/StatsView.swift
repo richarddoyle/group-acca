@@ -1,104 +1,118 @@
 import SwiftUI
 
 struct StatsView: View {
-    let group: BettingGroup?
     @State private var weeks: [Week] = []
-    @State private var isLoading = false
+    @State private var memberships: [Member] = []
+    @State private var selections: [Selection] = []
+    @State private var isLoading = true
     
     // Computed stats
-    private var totalWeeks: Int { weeks.count }
-    private var weeksWon: Int {
-        weeks.filter { $0.status == .won }.count
-    }
-    private var winRate: Double {
-        guard totalWeeks > 0 else { return 0 }
-        return Double(weeksWon) / Double(totalWeeks)
+    private var groupsMemberOf: Int { memberships.count }
+    
+    // Total picks from closed/resolved accas
+    private var totalPicks: Int {
+        let closedWeekIds = Set(weeks.filter { $0.status != .pending }.map { $0.id })
+        return selections.filter { closedWeekIds.contains($0.accaId) && $0.outcome != .pending }.count
     }
     
-    // Financials (Simplified)
-    private var totalStaked: Double {
-        return 0.0 // Placeholder
+    private var successfulPicks: Int {
+        let closedWeekIds = Set(weeks.filter { $0.status != .pending }.map { $0.id })
+        return selections.filter { closedWeekIds.contains($0.accaId) && $0.outcome == .win }.count
+    }
+    
+    private var successfulPickRate: Double {
+        guard totalPicks > 0 else { return 0 }
+        return Double(successfulPicks) / Double(totalPicks)
+    }
+    
+    // Total resolved and closed accas the user was part of
+    private var totalAccas: Int {
+        // Filter weeks that are not pending and where user had a SETTLED selection
+        let userSettledWeekIds = Set(selections.filter { $0.outcome != .pending }.map { $0.accaId })
+        return weeks.filter { $0.status != .pending && userSettledWeekIds.contains($0.id) }.count
+    }
+    
+    private var totalSuccessfulAccas: Int {
+        let userSettledWeekIds = Set(selections.filter { $0.outcome != .pending }.map { $0.accaId })
+        return weeks.filter { $0.status == .won && userSettledWeekIds.contains($0.id) }.count
+    }
+    
+    private var successfulAccaRate: Double {
+        guard totalAccas > 0 else { return 0 }
+        return Double(totalSuccessfulAccas) / Double(totalAccas)
     }
     
     var body: some View {
         List {
-            if let group = group {
-                Section("Group: \(group.name)") {
-                    // Group specific header logic if needed
-                }
-            } else {
-                Section("All Groups") {
-                    Text("Aggregated Stats")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-            
-            Section("Performance") {
-                HStack {
-                    Text("Weeks Won")
-                    Spacer()
-                    Text("\(weeksWon)")
-                        .foregroundStyle(.secondary)
-                }
-                HStack {
-                    Text("Win Rate")
-                    Spacer()
-                    Text(winRate, format: .percent)
-                        .foregroundStyle(.secondary)
-                }
-            }
-            
-            Section("Financials") {
-                HStack {
-                    Text("Total Staked")
-                    Spacer()
-                    Text(totalStaked, format: .currency(code: "GBP"))
-                        .foregroundStyle(.secondary)
-                }
-                HStack {
-                    Text("Total Returns")
-                    Spacer()
-                    Text(0, format: .currency(code: "GBP"))
-                        .foregroundStyle(.secondary)
-                }
+            Section("Overall") {
+                StatRow(label: "Groups Member Of", value: "\(groupsMemberOf)")
+                StatRow(label: "Total Picks", value: "\(totalPicks)")
+                StatRow(label: "Successful Picks", value: "\(successfulPicks)")
+                StatRow(label: "Successful Pick %", value: successfulPickRate.formatted(.percent.precision(.fractionLength(1))))
+                
+                StatRow(label: "Total Accas", value: "\(totalAccas)")
+                StatRow(label: "Total Successful Accas", value: "\(totalSuccessfulAccas)")
+                StatRow(label: "Successful Acca %", value: successfulAccaRate.formatted(.percent.precision(.fractionLength(1))))
             }
         }
-        .task(id: group?.id) {
+        .navigationTitle("My Stats")
+        .refreshable {
+            await loadStats()
+        }
+        .overlay {
+            if isLoading {
+                ProgressView()
+            } else if memberships.isEmpty && !isLoading {
+                ContentUnavailableView("No Stats Yet", systemImage: "chart.bar.fill", description: Text("Join a group and make some picks to see your stats!"))
+            }
+        }
+        .task {
             await loadStats()
         }
     }
     
     private func loadStats() async {
-        isLoading = true
+        let userId = SupabaseService.shared.currentUserId
+        
         do {
-            if let group = group {
-                let fetchedWeeks = try await SupabaseService.shared.fetchWeeks(groupId: group.id)
-                await MainActor.run {
-                    self.weeks = fetchedWeeks
-                    isLoading = false
-                }
-            } else {
-                // Fetch stats for ALL groups the user is in
-                // 1. Fetch user's groups
-                let userId = SupabaseService.shared.currentUserId
-                let userGroups = try await SupabaseService.shared.fetchGroups(for: userId)
-                
-                // 2. Fetch weeks for all groups (concurrently)
-                var allWeeks: [Week] = []
-                for grp in userGroups {
-                    let groupWeeks = try await SupabaseService.shared.fetchWeeks(groupId: grp.id)
-                    allWeeks.append(contentsOf: groupWeeks)
-                }
-                
-                await MainActor.run {
-                    self.weeks = allWeeks
-                    isLoading = false
-                }
+            async let fetchedMemberships = SupabaseService.shared.fetchMyMemberships(userId: userId)
+            async let fetchedWeeks = SupabaseService.shared.fetchAllMyWeeks(userId: userId)
+            
+            let m = try await fetchedMemberships
+            let w = try await fetchedWeeks
+            
+            let memberIds = m.map { $0.id }
+            let s = try await SupabaseService.shared.fetchMySelections(memberIds: memberIds)
+            
+            await MainActor.run {
+                self.memberships = m
+                self.weeks = w
+                self.selections = s
+                self.isLoading = false
             }
         } catch {
             print("Error loading stats: \(error)")
-            isLoading = false
+            await MainActor.run { isLoading = false }
         }
     }
+}
+
+struct StatRow: View {
+    let label: String
+    let value: String
+    
+    var body: some View {
+        HStack {
+            Text(label)
+                .foregroundStyle(.primary)
+            Spacer()
+            Text(value)
+                .foregroundStyle(.secondary)
+                .bold()
+        }
+    }
+}
+
+#Preview {
+    StatsView()
 }

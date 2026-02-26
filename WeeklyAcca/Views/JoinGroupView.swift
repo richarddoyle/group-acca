@@ -2,9 +2,7 @@ import SwiftUI
 
 struct JoinGroupView: View {
     @Environment(\.dismiss) private var dismiss
-    @AppStorage("userName") private var storedUserName: String = ""
     @State private var joinCode: String = ""
-    @State private var userName: String = "" // Need name for new member
     @State private var isJoining = false
     @State private var errorMessage: String?
     
@@ -23,13 +21,6 @@ struct JoinGroupView: View {
                     Text("Ask the group admin for the code found in their settings.")
                 }
                 
-                Section("Your Name") {
-                    TextField("Name", text: $userName)
-                        .onAppear {
-                            if !storedUserName.isEmpty { userName = storedUserName }
-                        }
-                }
-                
                 if let error = errorMessage {
                     Section {
                         Text(error)
@@ -46,7 +37,12 @@ struct JoinGroupView: View {
                     Button("Join") {
                         joinGroup()
                     }
-                    .disabled(joinCode.count < 6 || userName.isEmpty || isJoining)
+                    .disabled(joinCode.count < 6 || isJoining)
+                }
+            }
+            .overlay {
+                if isJoining {
+                    ProgressView()
                 }
             }
         }
@@ -58,9 +54,17 @@ struct JoinGroupView: View {
         
         Task {
             do {
-                let _ = try await SupabaseService.shared.joinGroup(code: joinCode, userName: userName, userId: SupabaseService.shared.currentUserId)
+                let userId = SupabaseService.shared.currentUserId
+                // Fetch profile to get the user's name
+                let profile = try await SupabaseService.shared.fetchProfile(id: userId)
+                
+                let _ = try await SupabaseService.shared.joinGroup(
+                    code: joinCode, 
+                    userName: profile.username, 
+                    userId: userId
+                )
+                
                 await MainActor.run {
-                    storedUserName = userName // Update stored name
                     isJoining = false
                     onJoinSuccess?()
                     dismiss()

@@ -3,6 +3,7 @@ import SwiftUI
 struct CreateAccaView: View {
     let group: BettingGroup
     let nextWeekNumber: Int
+    var onCreated: (() -> Void)? = nil
     @Environment(\.dismiss) private var dismiss
     
     @State private var title: String = ""
@@ -10,12 +11,15 @@ struct CreateAccaView: View {
     @State private var members: [Member] = [] // Loaded members
     
     @State private var startDate: Date = Date()
-    @State private var endDate: Date = Date().addingTimeInterval(60 * 60 * 24 * 7)
+    @State private var endDate: Date = Date()
+    @State private var isCreating: Bool = false
+    @State private var errorMessage: String?
+    @State private var showError: Bool = false
     
     @State private var selectedSport: String = "Football"
     let sports = ["Football"]
     
-    @State private var selectedLeagues: Set<String> = ["Premier League", "Championship", "League One", "League Two"]
+    @State private var selectedLeagues: Set<String> = Set(LeagueConstants.supportedLeagues.map { $0.name })
     
     var availableLeagues: [String] {
         LeagueConstants.supportedLeagues.map { $0.name }
@@ -72,7 +76,7 @@ struct CreateAccaView: View {
                                     }
                                 }
                             }
-                            .navigationTitle("Select Leagues")
+                            .navigationTitle("Competitions")
                         } label: {
                             HStack {
                                 Text("Competitions")
@@ -103,13 +107,40 @@ struct CreateAccaView: View {
                     Button("Cancel") { dismiss() }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Create") {
+                    Button {
                         createAcca()
+                    } label: {
+                        if isCreating {
+                            ProgressView()
+                                .controlSize(.small)
+                        } else {
+                            Text("Create")
+                        }
                     }
-                    .disabled(title.isEmpty || selectedMemberIDs.isEmpty)
+                    .disabled(title.isEmpty || selectedMemberIDs.isEmpty || isCreating)
                 }
             }
+            .safeAreaInset(edge: .top) {
+                if title.isEmpty || selectedMemberIDs.isEmpty {
+                   VStack {
+                        Text(title.isEmpty ? "Enter a title to continue" : "Select at least one participant")
+                            .font(.caption)
+                            .padding(.vertical, 4)
+                            .frame(maxWidth: .infinity)
+                            .background(Color.orange.opacity(0.1))
+                            .foregroundStyle(.orange)
+                    }
+                }
+            }
+            .alert("Error", isPresented: $showError, actions: {
+                Button("OK", role: .cancel) { }
+            }, message: {
+                Text(errorMessage ?? "Unknown error")
+            })
             .task {
+                // Initialize defaults
+                setupDefaults()
+                
                 // Load members for this group
                 do {
                     let fetchedMembers = try await SupabaseService.shared.fetchMembers(for: group.id)
@@ -123,6 +154,42 @@ struct CreateAccaView: View {
                     print("Error loading members: \(error)")
                 }
             }
+        }
+    }
+    
+    private func setupDefaults() {
+        let calendar = Calendar.current
+        let today = Date()
+        
+        if title.isEmpty {
+            self.title = today.formatted(.dateTime.month(.abbreviated).day().year()) // e.g., "Feb 27, 2026"
+        }
+        
+        // Target UK Timezone
+        guard let ukTimeZone = TimeZone(identifier: "Europe/London") else {
+            // Fallback if timezone identifier fails (highly unlikely)
+            startDate = today
+            endDate = calendar.date(byAdding: .day, value: 1, to: today) ?? today
+            return
+        }
+        
+        // 1. Start Date / Lock Time: Today at 14:30 (2:30 PM) UK Time
+        var components = calendar.dateComponents(in: ukTimeZone, from: today)
+        components.hour = 14
+        components.minute = 30
+        components.second = 0
+        
+        if let lockTime = components.date {
+            startDate = lockTime
+        } else {
+            startDate = today
+        }
+        
+        // 2. End Date: Tomorrow
+        if let tomorrow = calendar.date(byAdding: .day, value: 1, to: startDate) {
+            endDate = tomorrow
+        } else {
+            endDate = startDate
         }
     }
     
@@ -140,6 +207,7 @@ struct CreateAccaView: View {
     }
     
     private func createAcca() {
+        isCreating = true
         Task {
             do {
                 // 1. Use passed week number
@@ -187,9 +255,16 @@ struct CreateAccaView: View {
                 }
                 
                 await MainActor.run {
+                    isCreating = false
+                    onCreated?()
                     dismiss()
                 }
             } catch {
+                await MainActor.run {
+                    isCreating = false
+                    errorMessage = error.localizedDescription
+                    showError = true
+                }
                 print("Error creating acca: \(error)")
                 // Handle error (show alert)
             }

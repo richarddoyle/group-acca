@@ -105,12 +105,63 @@ class SupabaseService {
         try await client.auth.signOut()
     }
     
+    // MARK: - Profile Management
+    
+    func fetchProfile(id: UUID) async throws -> Profile {
+        let profile: Profile = try await client.database
+            .from("profiles")
+            .select()
+            .eq("id", value: id)
+            .single()
+            .execute()
+            .value
+        return profile
+    }
+    
+    func fetchProfiles(ids: [UUID]) async throws -> [Profile] {
+        if ids.isEmpty { return [] }
+        let profiles: [Profile] = try await client.database
+            .from("profiles")
+            .select()
+            .in("id", value: ids)
+            .execute()
+            .value
+        return profiles
+    }
+    
+    func updateProfile(_ profile: Profile) async throws {
+        try await client.database
+            .from("profiles")
+            .update(profile)
+            .eq("id", value: profile.id)
+            .execute()
+    }
+    
+    func uploadAvatar(imageData: Data, userId: UUID) async throws -> String {
+        let fileName = "\(userId.uuidString)_\(Date().timeIntervalSince1970).jpg"
+        let filePath = fileName
+        
+        try await client.storage
+            .from("avatars")
+            .upload(
+                path: filePath,
+                file: imageData,
+                options: FileOptions(contentType: "image/jpeg")
+            )
+        
+        // Return the public URL
+        let url = try client.storage
+            .from("avatars")
+            .getPublicURL(path: filePath)
+        
+        return url.absoluteString
+    }
+    
     // MARK: - Database Methods
     
     // Create a new betting group
     func createGroup(name: String, stake: Double) async throws -> BettingGroup {
         let currentId = currentUserId 
-        // Note: Ideally pass userId explicitly to avoid implicit dependency, but this works for now
         
         let group = BettingGroup(
             id: UUID(),
@@ -121,9 +172,28 @@ class SupabaseService {
             createdAt: Date()
         )
         
+        // 1. Insert the group
         try await client.database
             .from("betting_groups")
             .insert(group)
+            .execute()
+            
+        // 2. Fetch current user profile to get their username
+        let profile = try await fetchProfile(id: currentId)
+        
+        // 3. Insert the creator as an admin member
+        var member = Member(
+            id: UUID(),
+            groupId: group.id,
+            name: profile.username,
+            balance: 0.0,
+            joinedAt: Date(),
+            userId: currentId
+        )
+        
+        try await client.database
+            .from("members")
+            .insert(member)
             .execute()
         
         return group
@@ -166,6 +236,42 @@ class SupabaseService {
         return members
     }
     
+    func fetchMyMemberships(userId: UUID) async throws -> [Member] {
+        let members: [Member] = try await client.database
+            .from("members")
+            .select()
+            .eq("user_id", value: userId)
+            .execute()
+            .value
+        return members
+    }
+    
+    func fetchMySelections(memberIds: [UUID]) async throws -> [Selection] {
+        if memberIds.isEmpty { return [] }
+        let selections: [Selection] = try await client.database
+            .from("selections")
+            .select()
+            .in("member_id", value: memberIds)
+            .execute()
+            .value
+        return selections
+    }
+    
+    func fetchAllMyWeeks(userId: UUID) async throws -> [Week] {
+        // First get my group memberships
+        let memberships = try await fetchMyMemberships(userId: userId)
+        let groupIds = memberships.map { $0.groupId }
+        if groupIds.isEmpty { return [] }
+        
+        let weeks: [Week] = try await client.database
+            .from("accas")
+            .select()
+            .in("group_id", value: groupIds)
+            .execute()
+            .value
+        return weeks
+    }
+    
     // Join a group by code
     func joinGroup(code: String, userName: String, userId: UUID) async throws -> BettingGroup {
         // 1. Find group
@@ -181,7 +287,7 @@ class SupabaseService {
         }
         
         // 2. Create member
-        let member = Member(
+        var member = Member(
             id: UUID(),
             groupId: group.id,
             name: userName,
@@ -234,6 +340,33 @@ class SupabaseService {
         try await client.database
             .from("selections")
             .upsert(selection)
+            .execute()
+    }
+    
+    // Delete a betting group
+    func deleteGroup(id: UUID) async throws {
+        try await client.database
+            .from("betting_groups")
+            .delete()
+            .eq("id", value: id)
+            .execute()
+    }
+    
+    // Delete an Acca (Week)
+    func deleteAcca(id: UUID) async throws {
+        try await client.database
+            .from("accas")
+            .delete()
+            .eq("id", value: id)
+            .execute()
+    }
+    
+    // Update an Acca (Week)
+    func updateAcca(_ week: Week) async throws {
+        try await client.database
+            .from("accas")
+            .update(week)
+            .eq("id", value: week.id)
             .execute()
     }
 }

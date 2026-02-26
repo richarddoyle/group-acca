@@ -20,6 +20,8 @@ struct MatchOdds: Hashable {
     let away: Double
     var bttsYes: Double?
     var bttsNo: Double?
+    var over25: Double?
+    var under25: Double?
 }
 
 struct Fixture: Identifiable, Hashable {
@@ -31,12 +33,16 @@ struct Fixture: Identifiable, Hashable {
     let competition: Competition
     let status: String
     let odds: MatchOdds
+    let homeLogoUrl: String?
+    let awayLogoUrl: String?
+    let homeGoals: Int?
+    let awayGoals: Int?
     
     var timeString: String {
         date.formatted(date: .omitted, time: .shortened)
     }
     
-    init(id: UUID = UUID(), apiId: Int? = nil, homeTeam: String, awayTeam: String, date: Date, competition: Competition, status: String = "NS", odds: MatchOdds) {
+    init(id: UUID = UUID(), apiId: Int? = nil, homeTeam: String, awayTeam: String, date: Date, competition: Competition, status: String = "NS", odds: MatchOdds, homeLogoUrl: String? = nil, awayLogoUrl: String? = nil, homeGoals: Int? = nil, awayGoals: Int? = nil) {
         self.id = id
         self.apiId = apiId
         self.homeTeam = homeTeam
@@ -45,6 +51,10 @@ struct Fixture: Identifiable, Hashable {
         self.competition = competition
         self.status = status
         self.odds = odds
+        self.homeLogoUrl = homeLogoUrl
+        self.awayLogoUrl = awayLogoUrl
+        self.homeGoals = homeGoals
+        self.awayGoals = awayGoals
     }
 }
 

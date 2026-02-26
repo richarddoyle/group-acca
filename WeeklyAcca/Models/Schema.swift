@@ -6,12 +6,16 @@ import SwiftUI
 
 struct Profile: Codable, Identifiable {
     let id: UUID
-    let username: String
+    var username: String
+    var avatarUrl: String?
+    var phoneNumber: String?
     let createdAt: Date
     
     enum CodingKeys: String, CodingKey {
         case id
         case username
+        case avatarUrl = "avatar_url"
+        case phoneNumber = "phone_number"
         case createdAt = "created_at"
     }
 }
@@ -79,7 +83,7 @@ struct Week: Codable, Identifiable {
     let selectedLeagues: [String]
     // let allowEarlyKickoffs: Bool // Removed
     let isSettled: Bool
-    let status: WeekStatus
+    var status: WeekStatus
     
     enum CodingKeys: String, CodingKey {
         case id
@@ -108,6 +112,11 @@ struct Selection: Codable, Identifiable, Hashable {
     var homeScore: Int?
     var awayScore: Int?
     var matchStatus: String? // e.g., "NS", "FT"
+    var teamLogoUrl: String?
+    var homeTeamName: String?
+    var awayTeamName: String?
+    var fixtureId: Int?
+    var isPaid: Bool = false
     
     enum CodingKeys: String, CodingKey {
         case id
@@ -121,6 +130,11 @@ struct Selection: Codable, Identifiable, Hashable {
         case homeScore = "home_score"
         case awayScore = "away_score"
         case matchStatus = "match_status"
+        case teamLogoUrl = "team_logo_url"
+        case homeTeamName = "home_team_name"
+        case awayTeamName = "away_team_name"
+        case fixtureId = "fixture_id"
+        case isPaid = "is_paid"
     }
 }
 

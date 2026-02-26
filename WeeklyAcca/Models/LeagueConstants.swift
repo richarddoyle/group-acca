@@ -17,7 +17,9 @@ struct LeagueConstants {
         LeagueInfo(id: 78, name: "Bundesliga", country: "Germany"),
         LeagueInfo(id: 61, name: "Ligue 1", country: "France"),
         LeagueInfo(id: 45, name: "FA Cup", country: "England"),
-        LeagueInfo(id: 2, name: "Champions League", country: "World")
+        LeagueInfo(id: 2, name: "Champions League", country: "World"),
+        LeagueInfo(id: 3, name: "Europa League", country: "World"),
+        LeagueInfo(id: 848, name: "Europa Conference League", country: "World")
     ]
     
     static func getID(for name: String) -> Int? {

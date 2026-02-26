@@ -32,8 +32,6 @@ struct MainAppView: View {
     @Binding var selectedGroup: BettingGroup?
     @Binding var isAuthenticated: Bool
     @State private var groups: [BettingGroup] = []
-    @State private var showingCreateGroup = false
-    @State private var showingJoinGroup = false
     @State private var isLoading = false
     
     var body: some View {
@@ -51,9 +49,8 @@ struct MainAppView: View {
             }
             
             // Tab 2: My Stats
-            NavigationView {
-                StatsView(group: selectedGroup)
-                    .navigationTitle("My Stats")
+            NavigationStack {
+                StatsView()
             }
             .tabItem {
                 Label("My Stats", systemImage: "chart.bar")
@@ -67,14 +64,6 @@ struct MainAppView: View {
         }
         .task {
             await loadGroups()
-        }
-        .sheet(isPresented: $showingCreateGroup) {
-            CreateGroupView { groupName, userName in
-                createGroup(name: groupName, userName: userName)
-            }
-        }
-        .sheet(isPresented: $showingJoinGroup) {
-            JoinGroupView()
         }
     }
     
@@ -95,28 +84,6 @@ struct MainAppView: View {
         } catch {
             print("Error loading groups: \(error)")
             isLoading = false
-        }
-    }
-    
-    private func createGroup(name: String, userName: String) {
-        Task {
-            do {
-                let newGroup = try await SupabaseService.shared.createGroup(name: name, stake: 5.0) // Default stake
-                
-                 let _ = try await SupabaseService.shared.joinGroup(
-                    code: newGroup.joinCode, 
-                    userName: userName, 
-                    userId: SupabaseService.shared.currentUserId
-                )
-                
-                await loadGroups()
-                await MainActor.run {
-                    self.selectedGroup = newGroup
-                    self.showingCreateGroup = false
-                }
-            } catch {
-                print("Error creating group: \(error)")
-            }
         }
     }
 }

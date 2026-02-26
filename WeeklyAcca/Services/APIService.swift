@@ -7,31 +7,71 @@ class APIService {
     
     private init() {}
     
-    func fetchFixtures(date: Date) async throws -> [Competition: [Fixture]] {
+    func fetchFixtures(date: Date, leagueId: Int? = nil) async throws -> [Competition: [Fixture]] {
         let dateString = formatDate(date)
         
         // Ensure URL is valid
-        guard let url = URL(string: "\(baseURL)/fixtures?date=\(dateString)") else {
+        var urlString = "\(baseURL)/fixtures?date=\(dateString)"
+        if let leagueId = leagueId {
+            urlString += "&league=\(leagueId)"
+        }
+        
+        guard let url = URL(string: urlString) else {
             throw URLError(.badURL)
         }
         
         var request = URLRequest(url: url)
         request.addValue(apiKey, forHTTPHeaderField: "x-apisports-key")
-        request.addValue("v3.football.api-sports.io", forHTTPHeaderField: "x-rapidapi-host")
+        // No need for x-rapidapi-host when calling the direct endpoint
         
-        let (data, _) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await URLSession.shared.data(for: request)
+        
+        if let httpResponse = response as? HTTPURLResponse {
+            print("API Status Code: \(httpResponse.statusCode)")
+            if let remaining = httpResponse.allHeaderFields["x-requests-remaining"] as? String {
+                print("API Requests Remaining: \(remaining)")
+            }
+            
+            if httpResponse.statusCode == 429 {
+                throw NSError(domain: "APIService", code: 429, userInfo: [NSLocalizedDescriptionKey: "API Rate limit exceeded. Please try again tomorrow or upgrade your plan."])
+            }
+        }
         
         // Decode logic
-        let response = try JSONDecoder().decode(APIFixtureResponse.self, from: data)
+        let apiResponse: APIFixtureResponse
+        do {
+            apiResponse = try JSONDecoder().decode(APIFixtureResponse.self, from: data)
+        } catch let decodingError as DecodingError {
+            print("Decoding Error: \(decodingError)")
+            // Provide a very specific error to the UI
+            var details = "Unknown decoding error"
+            switch decodingError {
+            case .keyNotFound(let key, _): details = "Missing key: \(key.stringValue)"
+            case .typeMismatch(let type, let context): details = "Type mismatch for \(type): \(context.debugDescription)"
+            case .valueNotFound(let type, let context): details = "Value not found for \(type): \(context.debugDescription)"
+            case .dataCorrupted(let context): details = "Data corrupted: \(context.debugDescription)"
+            @unknown default: details = "Decode error: \(decodingError.localizedDescription)"
+            }
+            throw NSError(domain: "APIService", code: 422, userInfo: [NSLocalizedDescriptionKey: "API Response Format Error: \(details)"])
+        } catch {
+            throw error
+        }
         
-        // Fallback to Mock Data if API returns no results (likely due to free plan limits)
-        if response.response.isEmpty {
-            print("API returned 0 fixtures. Falling back to Mock Data.")
-            return await MockData.shared.getFixtures(for: date)
+        // Handle API Errors
+        if let errors = apiResponse.errors, !errors.isEmpty {
+            if let firstError = errors.values.first {
+                 print("API Error: \(firstError)")
+                 throw NSError(domain: "APIService", code: 429, userInfo: [NSLocalizedDescriptionKey: "API Error: \(firstError)"])
+            }
+        }
+        
+        if apiResponse.response.isEmpty {
+            print("API returned 0 fixtures for this query (results: \(apiResponse.results)).")
+            return [:]
         }
         
         // Map to Domain Models
-        return mapToDomain(response: response)
+        return mapToDomain(response: apiResponse)
     }
     
     private func formatDate(_ date: Date) -> String {
@@ -61,7 +101,9 @@ class APIService {
                 draw: Double.random(in: 2.5...4.5).rounded(toPlaces: 2),
                 away: Double.random(in: 1.5...5.0).rounded(toPlaces: 2),
                 bttsYes: Double.random(in: 1.5...2.2).rounded(toPlaces: 2),
-                bttsNo: Double.random(in: 1.5...2.2).rounded(toPlaces: 2)
+                bttsNo: Double.random(in: 1.5...2.2).rounded(toPlaces: 2),
+                over25: Double.random(in: 1.5...2.5).rounded(toPlaces: 2),
+                under25: Double.random(in: 1.5...2.5).rounded(toPlaces: 2)
             )
             
             let fixture = Fixture(
@@ -71,7 +113,11 @@ class APIService {
                 date: parseDate(item.fixture.date),
                 competition: competition,
                 status: item.fixture.status.short, // e.g., "NS", "FT"
-                odds: mockOdds
+                odds: mockOdds,
+                homeLogoUrl: item.teams.home.logo,
+                awayLogoUrl: item.teams.away.logo,
+                homeGoals: item.goals.home,
+                awayGoals: item.goals.away
             )
             
             if result[competition] != nil {
@@ -108,7 +154,27 @@ extension Double {
 
 // MARK: - API Models
 struct APIFixtureResponse: Codable {
+    let results: Int?
+    let errors: [String: String]?
     let response: [APIFixtureItem]
+
+    enum CodingKeys: String, CodingKey {
+        case results, errors, response
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        results = try container.decodeIfPresent(Int.self, forKey: .results)
+        response = try container.decode([APIFixtureItem].self, forKey: .response)
+
+        // Handle errors field being either an empty array [] or a dictionary [String: String]
+        if let dict = try? container.decodeIfPresent([String: String].self, forKey: .errors) {
+            errors = dict
+        } else {
+            // If it's not a dictionary, it's likely an empty array or missing
+            errors = nil
+        }
+    }
 }
 
 struct APIFixtureItem: Codable {
