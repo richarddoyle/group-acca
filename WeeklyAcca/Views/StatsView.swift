@@ -4,11 +4,10 @@ struct StatsView: View {
     @State private var weeks: [Week] = []
     @State private var memberships: [Member] = []
     @State private var selections: [Selection] = []
+    @State private var currentUserProfile: Profile?
     @State private var isLoading = true
     
-    // Computed stats
-    private var groupsMemberOf: Int { memberships.count }
-    
+    // Computed stats    
     // Total picks from closed/resolved accas
     private var totalPicks: Int {
         let closedWeekIds = Set(weeks.filter { $0.status != .pending }.map { $0.id })
@@ -42,20 +41,67 @@ struct StatsView: View {
         return Double(totalSuccessfulAccas) / Double(totalAccas)
     }
     
-    var body: some View {
-        List {
-            Section("Overall") {
-                StatRow(label: "Groups Member Of", value: "\(groupsMemberOf)")
-                StatRow(label: "Total Picks", value: "\(totalPicks)")
-                StatRow(label: "Successful Picks", value: "\(successfulPicks)")
-                StatRow(label: "Successful Pick %", value: successfulPickRate.formatted(.percent.precision(.fractionLength(1))))
-                
-                StatRow(label: "Total Accas", value: "\(totalAccas)")
-                StatRow(label: "Total Successful Accas", value: "\(totalSuccessfulAccas)")
-                StatRow(label: "Successful Acca %", value: successfulAccaRate.formatted(.percent.precision(.fractionLength(1))))
+    private var sortedSettledSelections: [Selection] {
+        selections
+            .filter { $0.outcome != .pending }
+            .sorted { ($0.kickoffTime ?? Date.distantPast) > ($1.kickoffTime ?? Date.distantPast) }
+    }
+    
+    private var currentStreak: Int {
+        var streak = 0
+        for selection in sortedSettledSelections {
+            if selection.outcome == .win {
+                streak += 1
+            } else if selection.outcome == .loss {
+                break
             }
         }
-        .navigationTitle("My Stats")
+        return streak
+    }
+    
+    private var last10Picks: [Selection] {
+        Array(sortedSettledSelections.prefix(10))
+    }
+    
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Text("My Stats")
+                    .font(.largeTitle)
+                    .fontWeight(.bold)
+                Spacer()
+            }
+            .padding(.horizontal, 20)
+            .padding(.top, 16)
+            .padding(.bottom, 8)
+            .background(Color(.systemGroupedBackground))
+            
+            List {
+                Section("Overall") {
+                    StatRow(label: "Successful Picks", value: "\(successfulPicks)")
+                    StatRow(label: "Successful Pick %", value: successfulPickRate.formatted(.percent.precision(.fractionLength(1))))
+                    
+                    StatRow(label: "Total Successful Accas", value: "\(totalSuccessfulAccas)")
+                    StatRow(label: "Successful Acca %", value: successfulAccaRate.formatted(.percent.precision(.fractionLength(1))))
+                }
+                
+                Section("Current Form") {
+                    StatRow(label: "Current Win Streak", value: "\(currentStreak)")
+                    
+                    if !last10Picks.isEmpty {
+                        ForEach(last10Picks) { pick in
+                            SelectionRow(selection: pick, memberName: nil, avatarUrl: nil, isLocked: true, showMatchStatus: false)
+                        }
+                    } else {
+                        Text("No completed picks yet.")
+                            .foregroundStyle(.secondary)
+                            .font(.subheadline)
+                    }
+                }
+            }
+        }
+        .navigationTitle("")
+        .navigationBarTitleDisplayMode(.inline)
         .refreshable {
             await loadStats()
         }
@@ -77,9 +123,11 @@ struct StatsView: View {
         do {
             async let fetchedMemberships = SupabaseService.shared.fetchMyMemberships(userId: userId)
             async let fetchedWeeks = SupabaseService.shared.fetchAllMyWeeks(userId: userId)
+            async let fetchedProfile = SupabaseService.shared.fetchProfile(id: userId)
             
             let m = try await fetchedMemberships
             let w = try await fetchedWeeks
+            let p = try? await fetchedProfile
             
             let memberIds = m.map { $0.id }
             let s = try await SupabaseService.shared.fetchMySelections(memberIds: memberIds)
@@ -88,6 +136,7 @@ struct StatsView: View {
                 self.memberships = m
                 self.weeks = w
                 self.selections = s
+                self.currentUserProfile = p
                 self.isLoading = false
             }
         } catch {

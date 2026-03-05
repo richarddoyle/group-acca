@@ -137,6 +137,15 @@ class SupabaseService {
             .execute()
     }
     
+    func updateAPNSToken(token: String) async throws {
+        let userId = currentUserId
+        try await client.database
+            .from("profiles")
+            .update(["apns_token": token])
+            .eq("id", value: userId)
+            .execute()
+    }
+    
     func uploadAvatar(imageData: Data, userId: UUID) async throws -> String {
         let fileName = "\(userId.uuidString)_\(Date().timeIntervalSince1970).jpg"
         let filePath = fileName
@@ -160,12 +169,13 @@ class SupabaseService {
     // MARK: - Database Methods
     
     // Create a new betting group
-    func createGroup(name: String, stake: Double) async throws -> BettingGroup {
+    func createGroup(name: String, stake: Double, avatarUrl: String? = nil) async throws -> BettingGroup {
         let currentId = currentUserId 
         
         let group = BettingGroup(
             id: UUID(),
             name: name,
+            avatarUrl: avatarUrl,
             stakePerPerson: stake,
             joinCode: String(UUID().uuidString.prefix(6)).uppercased(),
             adminId: currentId,
@@ -340,6 +350,25 @@ class SupabaseService {
         try await client.database
             .from("selections")
             .upsert(selection)
+            .execute()
+    }
+    
+    // Update a betting group (name/avatar)
+    func updateGroup(_ group: BettingGroup) async throws {
+        try await client.database
+            .from("betting_groups")
+            .update(group)
+            .eq("id", value: group.id)
+            .execute()
+    }
+    
+    // Leave a betting group
+    func leaveGroup(groupId: UUID, userId: UUID) async throws {
+        try await client.database
+            .from("members")
+            .delete()
+            .eq("group_id", value: groupId)
+            .eq("user_id", value: userId)
             .execute()
     }
     

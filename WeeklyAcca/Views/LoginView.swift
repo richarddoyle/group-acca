@@ -12,18 +12,26 @@ struct LoginView: View {
         VStack(spacing: 20) {
             Spacer()
             
-            Image(systemName: "sportscourt.fill")
-                .font(.system(size: 80))
-                .foregroundStyle(.green)
+            // Custom GA Logo
+            Image("GroupAccaLogo")
+                .resizable()
+                .scaledToFit()
+                .frame(height: 240)
+                .padding(.bottom, 20)
             
-            Text("WeeklyAcca")
-                .font(.largeTitle)
-                .bold()
+            VStack {
+                Text("Bet Together")
+                Text("Win Together")
+            }
+            .font(.title)
+            .bold()
+            .multilineTextAlignment(.center)
             
-            Text("Manage your betting groups and track your weekly accumulators.")
+            Text("Create group accumulators, track selections, see live outcomes")
+                .font(.body)
                 .multilineTextAlignment(.center)
                 .foregroundStyle(.secondary)
-                .padding(.horizontal)
+                .padding(.horizontal, 30)
             
             Spacer()
             

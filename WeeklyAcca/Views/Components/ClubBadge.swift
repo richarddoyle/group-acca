@@ -6,8 +6,8 @@ struct ClubBadge: View {
     
     var body: some View {
         Group {
-            if let urlString = url, let url = URL(string: urlString) {
-                AsyncImage(url: url) { image in
+            if let urlString = url {
+                CachedImage(url: urlString) { image in
                     image.resizable()
                         .scaledToFit()
                 } placeholder: {

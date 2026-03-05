@@ -13,7 +13,8 @@ class APIService {
         // Ensure URL is valid
         var urlString = "\(baseURL)/fixtures?date=\(dateString)"
         if let leagueId = leagueId {
-            urlString += "&league=\(leagueId)"
+            let season = getCurrentSeasonYear(for: date)
+            urlString += "&league=\(leagueId)&season=\(season)"
         }
         
         guard let url = URL(string: urlString) else {
@@ -80,6 +81,22 @@ class APIService {
         return formatter.string(from: date)
     }
     
+    // api-sports.io requires a season parameter when filtering by league.
+    // The European season typically starts in August.
+    // E.g., Matches in May 2025 belong to the 2024 season. Matches in Sept 2025 belong to the 2025 season.
+    private func getCurrentSeasonYear(for targetDate: Date) -> Int {
+        let calendar = Calendar.current
+        let year = calendar.component(.year, from: targetDate)
+        let month = calendar.component(.month, from: targetDate)
+        
+        // If the match is before August, it belongs to the previous year's season schedule
+        if month < 8 {
+            return year - 1
+        } else {
+            return year
+        }
+    }
+    
     private func mapToDomain(response: APIFixtureResponse) -> [Competition: [Fixture]] {
         var result: [Competition: [Fixture]] = [:]
         var competitionsCache: [Int: Competition] = [:]
@@ -128,6 +145,105 @@ class APIService {
         }
         
         return result
+    }
+    
+    // MARK: - New Endpoints (Events, Lineups, Standings, Stats)
+    
+    func fetchMatchEvents(fixtureId: Int) async throws -> [MatchEvent] {
+        let urlString = "\(baseURL)/fixtures/events?fixture=\(fixtureId)"
+        guard let url = URL(string: urlString) else { throw URLError(.badURL) }
+        
+        var request = URLRequest(url: url)
+        request.addValue(apiKey, forHTTPHeaderField: "x-apisports-key")
+        
+        let (data, _) = try await URLSession.shared.data(for: request)
+        let response = try JSONDecoder().decode(APIEventResponse.self, from: data)
+        
+        return response.response.map { MatchEvent(apiEvent: $0) }
+    }
+    
+    func fetchLineups(fixtureId: Int) async throws -> [TeamLineup] {
+        let urlString = "\(baseURL)/fixtures/lineups?fixture=\(fixtureId)"
+        guard let url = URL(string: urlString) else { throw URLError(.badURL) }
+        
+        var request = URLRequest(url: url)
+        request.addValue(apiKey, forHTTPHeaderField: "x-apisports-key")
+        
+        let (data, _) = try await URLSession.shared.data(for: request)
+        let response = try JSONDecoder().decode(APILineupResponse.self, from: data)
+        
+        return response.response.map { TeamLineup(apiLineup: $0) }
+    }
+    
+    // Fetch last 5 fixtures for a specific team
+    func fetchTeamRecentFixtures(teamId: Int) async throws -> [Fixture] {
+        let urlString = "\(baseURL)/fixtures?team=\(teamId)&last=5"
+        guard let url = URL(string: urlString) else { throw URLError(.badURL) }
+        
+        var request = URLRequest(url: url)
+        request.addValue(apiKey, forHTTPHeaderField: "x-apisports-key")
+        
+        let (data, _) = try await URLSession.shared.data(for: request)
+        let response = try JSONDecoder().decode(APIFixtureResponse.self, from: data)
+        
+        // Flatten the mapToDomain dictionary to just a single array of Fixtures
+        let dictionary = mapToDomain(response: response)
+        let fixtures = dictionary.values.flatMap { $0 }
+        
+        // Sort descending by date (most recent first)
+        return fixtures.sorted { $0.date > $1.date }
+    }
+    
+    // Fetch all finished fixtures for a specific league and season to locally calculate stats
+    func fetchFinishedFixtures(leagueId: Int, season: Int) async throws -> [Fixture] {
+        let urlString = "\(baseURL)/fixtures?league=\(leagueId)&season=\(season)&status=FT"
+        guard let url = URL(string: urlString) else { throw URLError(.badURL) }
+        
+        var request = URLRequest(url: url)
+        request.addValue(apiKey, forHTTPHeaderField: "x-apisports-key")
+        
+        let (data, _) = try await URLSession.shared.data(for: request)
+        let response = try JSONDecoder().decode(APIFixtureResponse.self, from: data)
+        
+        // Flatten the mapToDomain dictionary to just a single array of Fixtures
+        let dictionary = mapToDomain(response: response)
+        return dictionary.values.flatMap { $0 }
+    }
+    
+    func fetchStandings(leagueId: Int, season: Int) async throws -> [LeagueStandingRow] {
+        let urlString = "\(baseURL)/standings?league=\(leagueId)&season=\(season)"
+        guard let url = URL(string: urlString) else { throw URLError(.badURL) }
+        
+        var request = URLRequest(url: url)
+        request.addValue(apiKey, forHTTPHeaderField: "x-apisports-key")
+        
+        let (data, _) = try await URLSession.shared.data(for: request)
+        let response = try JSONDecoder().decode(APIStandingsResponse.self, from: data)
+        
+        // Return the first group of standings (usually the main table)
+        guard let firstLeague = response.response.first?.league,
+              let firstStandingGroup = firstLeague.standings.first else {
+            return []
+        }
+        
+        return firstStandingGroup.map { LeagueStandingRow(apiStanding: $0) }
+    }
+    
+    func fetchTeamStatistics(leagueId: Int, season: Int, teamId: Int) async throws -> TeamStatistics {
+        let urlString = "\(baseURL)/teams/statistics?league=\(leagueId)&season=\(season)&team=\(teamId)"
+        guard let url = URL(string: urlString) else { throw URLError(.badURL) }
+        
+        var request = URLRequest(url: url)
+        request.addValue(apiKey, forHTTPHeaderField: "x-apisports-key")
+        
+        let (data, _) = try await URLSession.shared.data(for: request)
+        let response = try JSONDecoder().decode(APITeamStatisticsResponse.self, from: data)
+        
+        guard let stats = response.response else {
+            throw URLError(.cannotDecodeContentData)
+        }
+        
+        return TeamStatistics(apiStats: stats)
     }
     
     private func parseDate(_ dateString: String) -> Date {
@@ -216,4 +332,231 @@ struct APITeam: Codable {
 struct APIGoals: Codable {
     let home: Int?
     let away: Int?
+}
+
+// MARK: - API Models (Events)
+struct APIEventResponse: Codable {
+    let response: [APIEventItem]
+}
+
+struct APIEventItem: Codable {
+    let time: APIEventTime
+    let team: APITeam
+    let player: APIEventPlayer
+    let assist: APIEventPlayer?
+    let type: String
+    let detail: String
+    let comments: String?
+}
+
+struct APIEventTime: Codable {
+    let elapsed: Int
+    let extra: Int?
+}
+
+struct APIEventPlayer: Codable {
+    let id: Int?
+    let name: String?
+}
+
+// MARK: - API Models (Lineups)
+struct APILineupResponse: Codable {
+    let response: [APILineupItem]
+}
+
+struct APILineupItem: Codable {
+    let team: APITeam
+    let formation: String?
+    let startXI: [APIPlayerWrapper]
+    let substitutes: [APIPlayerWrapper]
+}
+
+struct APIPlayerWrapper: Codable {
+    let player: APILineupPlayer
+}
+
+struct APILineupPlayer: Codable {
+    let id: Int
+    let name: String
+    let number: Int
+    let pos: String
+}
+
+// MARK: - API Models (Standings)
+struct APIStandingsResponse: Codable {
+    let response: [APIStandingsLeagueWrapper]
+}
+
+struct APIStandingsLeagueWrapper: Codable {
+    let league: APIStandingsLeague
+}
+
+struct APIStandingsLeague: Codable {
+    let id: Int
+    let name: String
+    let country: String
+    let logo: String
+    let flag: String?
+    let season: Int
+    let standings: [[APIStandingRow]]
+}
+
+struct APIStandingRow: Codable {
+    let rank: Int
+    let team: APITeam
+    let points: Int
+    let goalsDiff: Int
+    let group: String
+    let form: String?
+    let status: String
+    let description: String?
+    let all: APIStandingRecords
+}
+
+struct APIStandingRecords: Codable {
+    let played: Int
+    let win: Int
+    let draw: Int
+    let lose: Int
+    let goals: APIStandingGoals
+}
+
+struct APIStandingGoals: Codable {
+    let `for`: Int
+    let against: Int
+}
+
+// MARK: - API Models (Team Statistics)
+struct APITeamStatisticsResponse: Codable {
+    let response: APITeamStatistics?
+}
+
+struct APITeamStatistics: Codable {
+    let league: APILeague
+    let team: APITeam
+    let form: String?
+    let fixtures: APIStatsFixtures
+    let goals: APIStatsGoals
+    let clean_sheet: APIStatsCounters
+    let failed_to_score: APIStatsCounters
+}
+
+struct APIStatsFixtures: Codable {
+    let played: APIStatsCounters
+    let wins: APIStatsCounters
+    let draws: APIStatsCounters
+    let loses: APIStatsCounters
+}
+
+struct APIStatsCounters: Codable {
+    let home: Int
+    let away: Int
+    let total: Int
+}
+
+struct APIStatsGoals: Codable {
+    let `for`: APIStatsGoalsDetail
+    let against: APIStatsGoalsDetail
+}
+
+struct APIStatsGoalsDetail: Codable {
+    let total: APIStatsCounters
+    let average: APIStatsAverageCounters
+}
+
+struct APIStatsAverageCounters: Codable {
+    let home: String
+    let away: String
+    let total: String
+}
+
+// MARK: - Domain Models for View Use
+struct MatchEvent: Identifiable {
+    let id = UUID()
+    let elapsed: Int
+    let extra: Int?
+    let teamId: Int
+    let teamName: String
+    let playerName: String
+    let assistName: String?
+    let type: String
+    let detail: String
+    
+    init(apiEvent: APIEventItem) {
+        self.elapsed = apiEvent.time.elapsed
+        self.extra = apiEvent.time.extra
+        self.teamId = apiEvent.team.id
+        self.teamName = apiEvent.team.name
+        self.playerName = apiEvent.player.name ?? "Unknown"
+        self.assistName = apiEvent.assist?.name
+        self.type = apiEvent.type
+        self.detail = apiEvent.detail
+    }
+}
+
+struct TeamLineup {
+    let teamId: Int
+    let teamName: String
+    let teamLogo: String?
+    let formation: String
+    let startingXI: [(number: Int, name: String, pos: String)]
+    let subs: [(number: Int, name: String, pos: String)]
+    
+    init(apiLineup: APILineupItem) {
+        self.teamId = apiLineup.team.id
+        self.teamName = apiLineup.team.name
+        self.teamLogo = apiLineup.team.logo
+        self.formation = apiLineup.formation ?? "Unknown"
+        self.startingXI = apiLineup.startXI.map { ($0.player.number, $0.player.name, $0.player.pos) }
+        self.subs = apiLineup.substitutes.map { ($0.player.number, $0.player.name, $0.player.pos) }
+    }
+}
+
+struct LeagueStandingRow: Identifiable {
+    let id = UUID()
+    let rank: Int
+    let teamId: Int
+    let teamName: String
+    let teamLogo: String?
+    let played: Int
+    let points: Int
+    let goalDifference: Int
+    let form: String
+    let description: String?
+    
+    init(apiStanding: APIStandingRow) {
+        self.rank = apiStanding.rank
+        self.teamId = apiStanding.team.id
+        self.teamName = apiStanding.team.name
+        self.teamLogo = apiStanding.team.logo
+        self.played = apiStanding.all.played
+        self.points = apiStanding.points
+        self.goalDifference = apiStanding.goalsDiff
+        self.form = apiStanding.form ?? ""
+        self.description = apiStanding.description
+    }
+}
+
+struct TeamStatistics {
+    let form: String
+    let playedTotal: Int
+    let cleanSheetTotal: Int
+    let failedToScoreTotal: Int
+    
+    init(apiStats: APITeamStatistics) {
+        self.form = apiStats.form ?? ""
+        self.playedTotal = apiStats.fixtures.played.total
+        self.cleanSheetTotal = apiStats.clean_sheet.total
+        self.failedToScoreTotal = apiStats.failed_to_score.total
+    }
+    
+    var cleanSheetPercentage: Double {
+        guard playedTotal > 0 else { return 0 }
+        return Double(cleanSheetTotal) / Double(playedTotal)
+    }
+    
+    var failedToScorePercentage: Double {
+        guard playedTotal > 0 else { return 0 }
+        return Double(failedToScoreTotal) / Double(playedTotal)
+    }
 }

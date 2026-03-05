@@ -6,10 +6,9 @@ struct ProfileImage: View {
     
     var body: some View {
         Group {
-            if let urlString = url, let url = URL(string: urlString) {
-                AsyncImage(url: url) { image in
-                    image.resizable()
-                        .scaledToFill()
+            if let urlString = url {
+                CachedImage(url: urlString) { image in
+                    image.resizable().scaledToFill()
                 } placeholder: {
                     Circle().fill(Color(.systemGray5))
                 }

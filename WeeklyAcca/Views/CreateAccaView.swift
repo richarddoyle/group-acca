@@ -9,6 +9,8 @@ struct CreateAccaView: View {
     @State private var title: String = ""
     @State private var selectedMemberIDs: Set<UUID> = [] // UUID for Supabase
     @State private var members: [Member] = [] // Loaded members
+    @State private var stakePerPick: Double = 5.0
+    @State private var maxPicksPerMember: Int = 1
     
     @State private var startDate: Date = Date()
     @State private var endDate: Date = Date()
@@ -31,14 +33,14 @@ struct CreateAccaView: View {
         NavigationStack {
             Form {
                 // ... (Sections same as before)
-                Section("Accumulator Details") {
+                Section("Name") {
                     TextField("Title (e.g., Week 1)", text: $title)
                 }
                 
                 Section("Date Range") {
                     DatePicker("Start Date", selection: $startDate, displayedComponents: .date)
-                    DatePicker("Lock Time", selection: $startDate, displayedComponents: .hourAndMinute)
-                    Text("Players must submit their entries by this time. This will be shown in their local time.")
+                    DatePicker("Pick Deadline", selection: $startDate, displayedComponents: .hourAndMinute)
+                    Text("Pick deadline on \(startDate.formatted(.dateTime.weekday(.wide).month(.abbreviated).day().year())) \(startDate.formatted(date: .omitted, time: .shortened)) (\(TimeZone.current.abbreviation() ?? ""))")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                     
@@ -63,7 +65,7 @@ struct CreateAccaView: View {
                                         Spacer()
                                         if selectedLeagues.contains(league) {
                                             Image(systemName: "checkmark")
-                                                .foregroundStyle(.blue)
+                                                .foregroundStyle(Color.accentColor)
                                         }
                                     }
                                     .contentShape(Rectangle())
@@ -86,6 +88,48 @@ struct CreateAccaView: View {
                             }
                         }
                     }
+                    
+                    HStack {
+                        Text("Stake per pick")
+                        Spacer()
+                        TextField("£", value: $stakePerPick, format: .currency(code: "GBP"))
+                            .keyboardType(.decimalPad)
+                            .multilineTextAlignment(.trailing)
+                            .frame(width: 80)
+                    }
+                    
+                    HStack {
+                        Text("Max picks per member")
+                        Spacer()
+                        HStack(spacing: 0) {
+                            Button {
+                                if maxPicksPerMember > 1 { maxPicksPerMember -= 1 }
+                            } label: {
+                                Text("-")
+                                    .frame(width: 32, height: 32)
+                                    .background(Color(.systemGray5))
+                                    .foregroundStyle(maxPicksPerMember > 1 ? Color.primary : Color.secondary)
+                                    .clipShape(RoundedRectangle(cornerRadius: 6))
+                            }
+                            .buttonStyle(.plain)
+                            
+                            Text("\(maxPicksPerMember)")
+                                .frame(width: 40)
+                                .multilineTextAlignment(.center)
+                                .fontWeight(.semibold)
+                            
+                            Button {
+                                if maxPicksPerMember < 20 { maxPicksPerMember += 1 }
+                            } label: {
+                                Text("+")
+                                    .frame(width: 32, height: 32)
+                                    .background(Color(.systemGray5))
+                                    .foregroundStyle(maxPicksPerMember < 20 ? Color.primary : Color.secondary)
+                                    .clipShape(RoundedRectangle(cornerRadius: 6))
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
                 }
                 
                 Section("Participants") {
@@ -101,7 +145,8 @@ struct CreateAccaView: View {
                     }
                 }
             }
-            .navigationTitle("New Accumulator")
+            .navigationTitle("")
+            .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
@@ -223,7 +268,8 @@ struct CreateAccaView: View {
                     endDate: endDate,
                     sport: selectedSport,
                     selectedLeagues: Array(selectedLeagues),
-                    // allowEarlyKickoffs removed
+                    stakePerPick: stakePerPick,
+                    maxPicksPerMember: maxPicksPerMember,
                     isSettled: false,
                     status: .pending
                 )

@@ -8,7 +8,7 @@ struct GroupMembersView: View {
     
     var body: some View {
         List {
-            Section("Members") {
+            Section {
                 if isLoading {
                     ProgressView()
                 } else if members.isEmpty {
@@ -28,8 +28,8 @@ struct GroupMembersView: View {
                                             .font(.caption2.bold())
                                             .padding(.horizontal, 6)
                                             .padding(.vertical, 2)
-                                            .background(Color.blue.opacity(0.1))
-                                            .foregroundStyle(.blue)
+                                            .background(Color.accentColor.opacity(0.1))
+                                            .foregroundStyle(Color.accentColor)
                                             .clipShape(Capsule())
                                     }
                                 }

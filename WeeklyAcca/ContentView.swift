@@ -48,7 +48,15 @@ struct MainAppView: View {
                 Label("Groups", systemImage: "person.3")
             }
             
-            // Tab 2: My Stats
+            // Tab 2: Matches
+            NavigationStack {
+                MatchesView()
+            }
+            .tabItem {
+                Label("Matches", systemImage: "sportscourt")
+            }
+            
+            // Tab 3: My Stats
             NavigationStack {
                 StatsView()
             }
@@ -64,6 +72,7 @@ struct MainAppView: View {
         }
         .task {
             await loadGroups()
+            requestPushNotificationPermission()
         }
     }
     
@@ -84,6 +93,29 @@ struct MainAppView: View {
         } catch {
             print("Error loading groups: \(error)")
             isLoading = false
+        }
+    }
+    
+    private func requestPushNotificationPermission() {
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { granted, error in
+            if granted {
+                DispatchQueue.main.async {
+                    UIApplication.shared.registerForRemoteNotifications()
+                }
+            } else if let error = error {
+                print("APNs Auth error: \(error.localizedDescription)")
+            }
+        }
+        
+        // Sync existing token if we have one
+        if let token = UserDefaults.standard.string(forKey: "apnsToken") {
+            Task {
+                do {
+                    try await SupabaseService.shared.updateAPNSToken(token: token)
+                } catch {
+                    print("Could not sync APNs token: \(error.localizedDescription)")
+                }
+            }
         }
     }
 }

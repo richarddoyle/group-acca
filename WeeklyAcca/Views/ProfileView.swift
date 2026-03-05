@@ -1,6 +1,7 @@
 import SwiftUI
 import PhotosUI
 import CoreTransferable
+import StoreKit
 
 struct ProfileView: View {
     @Binding var selectedGroup: BettingGroup?
@@ -29,31 +30,33 @@ struct ProfileView: View {
     
     var body: some View {
         NavigationStack {
-            List {
+            VStack(spacing: 0) {
+                HStack {
+                    Text("Profile")
+                        .font(.largeTitle)
+                        .fontWeight(.bold)
+                    Spacer()
+                }
+                .padding(.horizontal, 20)
+                .padding(.top, 16)
+                .padding(.bottom, 8)
+                .background(Color(.systemGroupedBackground))
+                
+                List {
                 Section {
                     VStack(spacing: 20) {
                         // Profile Picture
-                        PhotosPicker(selection: $selectedItem, matching: .images) {
-                            ZStack {
-                                if isUploading {
-                                    Circle()
-                                        .fill(Color(.systemGray6))
-                                        .frame(width: 100, height: 100)
-                                    ProgressView()
-                                        .scaleEffect(1.5)
-                                } else {
-                                    ProfileImage(url: profile?.avatarUrl, size: 100)
-                                }
-                                
-                                Image(systemName: "camera.fill")
-                                    .padding(8)
-                                    .background(.blue, in: Circle())
-                                    .foregroundStyle(.white)
-                                    .offset(x: 35, y: 35)
+                        ZStack {
+                            if isUploading {
+                                Circle()
+                                    .fill(Color(.systemGray6))
+                                    .frame(width: 180, height: 180)
+                                ProgressView()
+                                    .scaleEffect(1.5)
+                            } else {
+                                ProfileImage(url: profile?.avatarUrl, size: 180)
                             }
                         }
-                        .disabled(isUploading)
-                        .buttonStyle(.plain)
                     }
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 8)
@@ -61,6 +64,21 @@ struct ProfileView: View {
                 .listRowBackground(Color.clear)
                 
                 Section {
+                    PhotosPicker(selection: $selectedItem, matching: .images) {
+                        HStack(spacing: 12) {
+                            Image(systemName: "camera.badge.ellipsis")
+                                .foregroundStyle(Color.accentColor)
+                                .frame(width: 24)
+                            
+                            Text("Set Profile Photo")
+                                .foregroundStyle(.primary)
+                            
+                            Spacer()
+                        }
+                        .contentShape(Rectangle())
+                    }
+                    .disabled(isUploading)
+                    
                     ProfileRow(
                         value: profile?.username ?? "Not set",
                         icon: "person.fill"
@@ -76,56 +94,45 @@ struct ProfileView: View {
                     }
                 }
                 
-                Section("My Groups") {
-                    if isLoading {
-                        ProgressView()
-                    } else if groups.isEmpty {
-                        Text("No groups found")
-                            .foregroundStyle(.secondary)
-                    } else {
-                        ForEach(groups) { group in
-                            Button {
-                                selectedGroup = group
-                            } label: {
-                                HStack {
-                                    VStack(alignment: .leading) {
-                                        Text(group.name)
-                                            .font(.headline)
-                                    }
-                                    Spacer()
-                                    if selectedGroup?.id == group.id {
-                                        Image(systemName: "checkmark")
-                                            .foregroundStyle(.blue)
-                                    }
-                                }
-                                .contentShape(Rectangle())
-                            }
-                            .buttonStyle(.plain)
-                        }
-                        // .onDelete(perform: deleteGroups) // TODO: Implement Supabase delete
-                    }
-                }
-                
                 Section("App Settings") {
+                    ProfileRow(
+                        value: "Notifications",
+                        icon: "bell.badge.fill"
+                    ) {
+                        if let url = URL(string: UIApplication.openNotificationSettingsURLString) {
+                            UIApplication.shared.open(url)
+                        }
+                    }
+                    
+                    ProfileRow(
+                        value: "Leave a Review",
+                        icon: "star.fill"
+                    ) {
+                        if let scene = UIApplication.shared.connectedScenes.first(where: { $0.activationState == .foregroundActive }) as? UIWindowScene {
+                            SKStoreReviewController.requestReview(in: scene)
+                        }
+                    }
+                    
                     Text("Version 1.0.0")
                         .foregroundStyle(.secondary)
-                    
-                    Button("Sign Out") {
+                }
+                
+                Section {
+                    Button(action: {
                         Task {
-                            do {
-                                try await SupabaseService.shared.signOut()
-                                await MainActor.run {
-                                    isAuthenticated = false
-                                }
-                            } catch {
-                                print("Error signing out: \(error)")
-                            }
+                            try? await SupabaseService.shared.signOut()
+                            await MainActor.run { isAuthenticated = false }
                         }
+                    }) {
+                        Text("Sign Out")
+                            .foregroundStyle(.red)
+                            .frame(maxWidth: .infinity)
                     }
-                    .foregroundStyle(.red)
                 }
             }
-            .navigationTitle("Profile")
+            }
+            .navigationTitle("")
+            .navigationBarTitleDisplayMode(.inline)
             .sheet(item: $fieldToEdit) { field in
                 EditProfileFieldView(
                     field: field,
@@ -264,7 +271,7 @@ struct ProfileRow: View {
         Button(action: action) {
             HStack(spacing: 12) {
                 Image(systemName: icon)
-                    .foregroundStyle(.blue)
+                    .foregroundStyle(Color.accentColor)
                     .frame(width: 24)
                 
                 Text(value)

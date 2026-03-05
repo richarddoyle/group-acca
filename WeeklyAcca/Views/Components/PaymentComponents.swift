@@ -54,7 +54,7 @@ struct PaymentModuleSection: View {
             } label: {
                 Text("I've Sent Payment")
                     .font(.footnote)
-                    .foregroundStyle(.blue)
+                    .foregroundStyle(Color.accentColor)
                     .frame(maxWidth: .infinity)
             }
         }

@@ -10,6 +10,7 @@ struct Profile: Codable, Identifiable {
     var avatarUrl: String?
     var phoneNumber: String?
     let createdAt: Date
+    var apnsToken: String?
     
     enum CodingKeys: String, CodingKey {
         case id
@@ -17,12 +18,14 @@ struct Profile: Codable, Identifiable {
         case avatarUrl = "avatar_url"
         case phoneNumber = "phone_number"
         case createdAt = "created_at"
+        case apnsToken = "apns_token"
     }
 }
 
 struct BettingGroup: Codable, Identifiable {
     let id: UUID
-    let name: String
+    var name: String
+    var avatarUrl: String?
     let stakePerPerson: Double
     let joinCode: String
     let adminId: UUID
@@ -31,6 +34,7 @@ struct BettingGroup: Codable, Identifiable {
     enum CodingKeys: String, CodingKey {
         case id
         case name
+        case avatarUrl = "avatar_url"
         case stakePerPerson = "stake_per_person"
         case joinCode = "join_code"
         case adminId = "admin_id"
@@ -81,7 +85,8 @@ struct Week: Codable, Identifiable {
     let endDate: Date
     let sport: String
     let selectedLeagues: [String]
-    // let allowEarlyKickoffs: Bool // Removed
+    var stakePerPick: Double?
+    var maxPicksPerMember: Int?
     let isSettled: Bool
     var status: WeekStatus
     
@@ -94,7 +99,8 @@ struct Week: Codable, Identifiable {
         case endDate = "end_date"
         case sport
         case selectedLeagues = "selected_leagues"
-        // case allowEarlyKickoffs = "allow_early_kickoffs" // Removed
+        case stakePerPick = "stake_per_pick"
+        case maxPicksPerMember = "max_picks_per_member"
         case isSettled = "is_settled"
         case status
     }
@@ -116,6 +122,8 @@ struct Selection: Codable, Identifiable, Hashable {
     var homeTeamName: String?
     var awayTeamName: String?
     var fixtureId: Int?
+    var homeTeamLogoUrl: String?
+    var awayTeamLogoUrl: String?
     var isPaid: Bool = false
     
     enum CodingKeys: String, CodingKey {
@@ -134,6 +142,8 @@ struct Selection: Codable, Identifiable, Hashable {
         case homeTeamName = "home_team_name"
         case awayTeamName = "away_team_name"
         case fixtureId = "fixture_id"
+        case homeTeamLogoUrl = "home_team_logo_url"
+        case awayTeamLogoUrl = "away_team_logo_url"
         case isPaid = "is_paid"
     }
 }

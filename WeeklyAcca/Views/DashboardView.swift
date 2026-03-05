@@ -4,18 +4,26 @@ enum DashboardTab: String, CaseIterable {
     case accas = "Accas"
     case leaderboard = "Leaderboard"
     case members = "Members"
-
 }
 
 struct DashboardView: View {
-    let group: BettingGroup
+    @State private var currentGroup: BettingGroup
     @Binding var selectedGroup: BettingGroup?
+    
+    init(group: BettingGroup, selectedGroup: Binding<BettingGroup?>) {
+        self._currentGroup = State(initialValue: group)
+        self._selectedGroup = selectedGroup
+    }
     @State private var weeks: [Week] = []
     @State private var selectedTab: DashboardTab = .accas
     @State private var showingCreateAcca = false
     @State private var showingMatchSelection = false
+    @State private var showingSettings = false
     @State private var path = NavigationPath()
     @State private var isLoading = false
+    @State private var errorMessage: String?
+    @State private var showingError = false
+    @State private var showCopyToast = false
     @State private var memberCount: Int = 0
     
     // Derived current week for "Make Your Pick" logic
@@ -27,21 +35,60 @@ struct DashboardView: View {
         NavigationStack(path: $path) {
             VStack(spacing: 0) {
                 // Header Information
-                VStack(alignment: .leading, spacing: 8) {
-                    Text(group.name)
-                        .font(.largeTitle)
-                        .bold()
+                HStack(spacing: 16) {
+                    // Group Avatar
+                    Button {
+                        showingSettings = true
+                    } label: {
+                        Group {
+                            if let urlString = currentGroup.avatarUrl {
+                                CachedImage(url: urlString) { image in
+                                    image
+                                        .resizable()
+                                        .aspectRatio(contentMode: .fill)
+                                } placeholder: {
+                                    Image(systemName: "person.3.fill")
+                                        .foregroundStyle(.secondary)
+                                }
+                                .frame(width: 80, height: 80)
+                                .clipShape(Circle())
+                            } else {
+                                Circle()
+                                    .fill(Color(.systemGray5))
+                                    .frame(width: 80, height: 80)
+                                    .overlay(
+                                        Image(systemName: "person.3.fill")
+                                            .foregroundStyle(.secondary)
+                                            .font(.title)
+                                    )
+                            }
+                        }
+                    }
+                    .buttonStyle(.plain)
                     
-                    HStack {
-                        Text("\(memberCount) Members")
-                        Text("•")
-                        Text("Code: \(group.joinCode)")
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text(currentGroup.name)
+                            .font(.title2)
+                            .bold()
+                            .lineLimit(2)
+                            .truncationMode(.tail)
+                            .foregroundStyle(.primary)
                         
-                        Button {
-                            UIPasteboard.general.string = group.joinCode
-                        } label: {
-                            Image(systemName: "doc.on.doc")
-                                .font(.caption)
+                        HStack {
+                            Text("\(memberCount) Members")
+                            Text("•")
+                            Text("Code: \(currentGroup.joinCode)")
+                        
+                            Button {
+                                UIPasteboard.general.string = currentGroup.joinCode
+                                withAnimation { showCopyToast = true }
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                                    withAnimation { showCopyToast = false }
+                                }
+                            } label: {
+                                Image(systemName: "doc.on.doc")
+                                    .font(.caption)
+                            }
                         }
                     }
                     .font(.subheadline)
@@ -50,9 +97,6 @@ struct DashboardView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding()
                 .background(Color(.systemBackground))
-                
-                Divider()
-                
                 // Tabbed Menu Navigation
                 HStack(spacing: 0) {
                     ForEach(DashboardTab.allCases, id: \.self) { tab in
@@ -69,7 +113,7 @@ struct DashboardView: View {
                                 
                                 // Indicator bar
                                 Rectangle()
-                                    .fill(selectedTab == tab ? Color.blue : Color.clear)
+                                    .fill(selectedTab == tab ? Color.accentColor : Color.clear)
                                     .frame(height: 2)
                             }
                             .frame(maxWidth: .infinity)
@@ -84,50 +128,49 @@ struct DashboardView: View {
                 Group {
                     switch selectedTab {
                     case .accas:
-                    GroupWeeksView(weeks: $weeks, group: group, path: $path, onRefresh: {
+                    GroupWeeksView(weeks: $weeks, group: currentGroup, path: $path, onRefresh: {
                         await loadWeeks()
                     })
                 case .leaderboard:
-                        GroupLeaderboardView(group: group)
+                        GroupLeaderboardView(group: currentGroup)
                     case .members:
-                        GroupMembersView(group: group)
-
+                        GroupMembersView(group: currentGroup)
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
             .background(Color(.systemGroupedBackground))
+            .navigationTitle("")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
+                ToolbarItem(placement: .topBarLeading) {
                     Button {
                         selectedGroup = nil
                     } label: {
                         HStack(spacing: 4) {
                             Image(systemName: "chevron.left")
-                            Text("My Groups")
+                                .font(.body.weight(.semibold))
+                            Text("Groups")
                         }
                     }
                 }
                 
-                ToolbarItem(placement: .primaryAction) {
-                    HStack(spacing: 16) {
-                        Button {
-                            // Settings action
-                        } label: {
-                            Image(systemName: "gearshape")
-                        }
-                        
-                        Button {
-                            showingCreateAcca = true
-                        } label: {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        showingCreateAcca = true
+                    } label: {
+                        HStack(spacing: 4) {
+                            Text("Create")
                             Image(systemName: "plus")
                         }
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
+                        .clipShape(Capsule())
                     }
                 }
             }
             .sheet(isPresented: $showingCreateAcca) {
-                CreateAccaView(group: group, nextWeekNumber: (weeks.map { $0.weekNumber }.max() ?? 0) + 1) {
+                CreateAccaView(group: currentGroup, nextWeekNumber: (weeks.map { $0.weekNumber }.max() ?? 0) + 1) {
                     Task {
                         await loadWeeks()
                     }
@@ -149,6 +192,25 @@ struct DashboardView: View {
                      )
                 }
             }
+            .navigationDestination(isPresented: $showingSettings) {
+                GroupSettingsView(group: $currentGroup, onLeaveGroup: {
+                    selectedGroup = nil
+                })
+            }
+        }
+        .overlay(alignment: .bottom) {
+            if showCopyToast {
+                Text("Copied to clipboard")
+                    .font(.subheadline)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 10)
+                    .background(.black.opacity(0.8))
+                    .foregroundStyle(.white)
+                    .clipShape(Capsule())
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                    .padding(.bottom, 80)
+                    .zIndex(1)
+            }
         }
         .task {
             await loadWeeks()
@@ -158,8 +220,8 @@ struct DashboardView: View {
     private func loadWeeks() async {
         isLoading = true
         do {
-            async let fetchedWeeks = SupabaseService.shared.fetchWeeks(groupId: group.id)
-            async let fetchedMembers = SupabaseService.shared.fetchMembers(for: group.id)
+            async let fetchedWeeks = SupabaseService.shared.fetchWeeks(groupId: currentGroup.id)
+            async let fetchedMembers = SupabaseService.shared.fetchMembers(for: currentGroup.id)
             
             let weeksResults = try await fetchedWeeks
             let membersResults = try await fetchedMembers
@@ -171,7 +233,7 @@ struct DashboardView: View {
             }
             
             // --- Silent Sweep: Fix any weeks stuck in "pending" that should be won/lost ---
-            let pendingWeekIds = weeksResults.filter { $0.status == .pending }.map { $0.id }
+            let pendingWeekIds = weeksResults.filter { $0.status == WeekStatus.pending }.map { $0.id }
             if !pendingWeekIds.isEmpty {
                 let memberIds = membersResults.map { $0.id }
                 let allSelections = try await SupabaseService.shared.fetchMySelections(memberIds: memberIds)
@@ -181,18 +243,18 @@ struct DashboardView: View {
                     if weekSelections.isEmpty { continue }
                     
                     let allOutcomes = weekSelections.map { $0.outcome }
-                    var correctStatus: WeekStatus = .pending
+                    var correctStatus: WeekStatus = WeekStatus.pending
                     
-                    if allOutcomes.contains(.loss) {
-                        correctStatus = .lost
+                    if allOutcomes.contains(SelectionOutcome.loss) {
+                        correctStatus = WeekStatus.lost
                     } else {
-                        let settledOutcomes = allOutcomes.filter { $0 != .pending }
+                        let settledOutcomes = allOutcomes.filter { $0 != SelectionOutcome.pending }
                         if !allOutcomes.isEmpty && settledOutcomes.count == membersResults.count {
-                             correctStatus = .won 
+                             correctStatus = WeekStatus.won 
                         }
                     }
                     
-                    if correctStatus != .pending {
+                    if correctStatus != WeekStatus.pending {
                         week.status = correctStatus
                         // 1. Save to DB
                         try? await SupabaseService.shared.updateAcca(week)
@@ -227,7 +289,8 @@ struct GroupWeeksView: View {
     
     var body: some View {
         List {
-            if weeks.isEmpty {
+            Section {
+                if weeks.isEmpty {
                 ContentUnavailableView("No Accumulators", systemImage: "sportscourt", description: Text("Start a new accumulator to begin tracking bets."))
                     .listRowSeparator(.hidden)
                     .listRowBackground(Color.clear)
@@ -250,8 +313,9 @@ struct GroupWeeksView: View {
                 }
                 .onDelete(perform: deleteWeeks)
             }
+            }
         }
-        .listStyle(.plain)
+        .listStyle(.insetGrouped)
         .refreshable {
             // Need a way to trigger parent refresh... adding a closure
             await onRefresh()
@@ -289,6 +353,7 @@ struct WeekDetailView: View {
     @State private var profiles: [UUID: Profile] = [:]
     @State private var isLoading: Bool = true
     @State private var isCreatingPick: Bool = false
+    @State private var isUpdatingPayment: Bool = false
     
     @State private var showingErrorAlert: Bool = false
     @State private var errorMessage: String = ""
@@ -300,25 +365,31 @@ struct WeekDetailView: View {
         self._currentWeek = State(initialValue: week.wrappedValue)
     }
     
+    @State private var fetchedUserName: String? = nil
+    
     // Robustly identify the current user's Member record across auth states
     private var currentUserMember: Member? {
         let currentUserId = SupabaseService.shared.currentUserId
         if let exactMatch = members.first(where: { $0.userId == currentUserId }) {
             return exactMatch
         }
-        // Fallback for migrated/anonymous users
-        if !userName.isEmpty, let nameMatch = members.first(where: { $0.name == userName }) {
+        // Fallback for migrated/anonymous users using AppStorage
+        if !userName.isEmpty, let nameMatch = members.first(where: { $0.name.localizedStandardContains(userName) }) {
             return nameMatch
+        }
+        // Final fallback: use the fetched profile username
+        if let fetchedName = fetchedUserName, let fetchedMatch = members.first(where: { $0.name.localizedStandardContains(fetchedName) }) {
+            return fetchedMatch
         }
         return nil
     }
     
-    // Computed property for "My Selection"
-    private var mySelection: Selection? {
+    // Computed property for "My Selections"
+    private var mySelections: [Selection] {
         guard let myMember = currentUserMember else {
-            return nil
+            return []
         }
-        return selections.first { $0.memberId == myMember.id }
+        return selections.filter { $0.memberId == myMember.id }
     }
     
     // Computed property for "Member Selections"
@@ -326,9 +397,9 @@ struct WeekDetailView: View {
         members
             .filter { $0.id != currentUserMember?.id } // Filter out me using exact Member ID
             .map { member in
-                let selection = selections.first(where: { $0.memberId == member.id })
+                let memberPicks = selections.filter( { $0.memberId == member.id } )
                 let avatarUrl = member.userId.flatMap { profiles[$0]?.avatarUrl }
-                return MemberSelectionDisplay(member: member, selection: selection, avatarUrl: avatarUrl)
+                return MemberSelectionDisplay(member: member, selections: memberPicks, avatarUrl: avatarUrl)
             }
     }
     
@@ -363,54 +434,84 @@ struct WeekDetailView: View {
     
     var body: some View {
         List {
-            Section("Summary") {
-                HStack {
-                    Text("Status")
-                    Spacer()
-                    if liveStatus == .pending {
-                        if currentWeek.isOpen {
-                            StatusBadge(status: .pending, label: "Open", color: .blue)
-                        } else {
-                            StatusBadge(status: .pending, label: "In Progress", color: .orange)
-                        }
-                    } else {
-                        StatusBadge(status: liveStatus)
-                    }
-                }
-                
-                if currentWeek.status == .pending {
+            Section {
+                VStack(alignment: .leading, spacing: 6) {
                     HStack {
-                        Text(currentWeek.isOpen ? "Locks At" : "Locked At")
+                        Text("Status")
                         Spacer()
-                        Text(currentWeek.startDate, format: .dateTime.day().month().year().hour().minute())
+                        if liveStatus == .pending {
+                            if currentWeek.isOpen {
+                                StatusBadge(status: .pending, label: "Open", color: Color.accentColor)
+                            } else {
+                                StatusBadge(status: .pending, label: "In Progress", color: .orange)
+                            }
+                        } else {
+                            StatusBadge(status: liveStatus)
+                        }
+                    }
+                    
+                    if currentWeek.isOpen {
+                        Text("Picks lock at \(currentWeek.startDate.formatted(date: .abbreviated, time: .shortened))")
+                            .font(.caption)
                             .foregroundStyle(.secondary)
                     }
                 }
-                HStack {
-                    Text("Total Stake")
-                    Spacer()
-                    Text(totalStake, format: .currency(code: "GBP"))
-                }
-                HStack {
-                    Text("Potential Winnings")
-                    Spacer()
-                    
-                    Text(potentialWinnings, format: .currency(code: "GBP"))
-                        .foregroundStyle(.green)
-                        .bold()
+                .padding(.vertical, 2)
+                
+                if !mySelections.isEmpty && !mySelections.contains(where: { $0.teamName == "Pending" }) {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Payment Confirmation")
+                                .font(.headline)
+                            let totalStake = group.stakePerPerson * Double(mySelections.count)
+                            Text("I have paid my £\(String(format: "%.2f", totalStake)) stake")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        
+                        let isPaid = mySelections.first?.isPaid ?? false
+                        Button {
+                            togglePaymentStatus(to: !isPaid)
+                        } label: {
+                            Image(systemName: isPaid ? "checkmark.circle.fill" : "circle")
+                                .font(.title2)
+                                .foregroundStyle(isPaid ? .green : .gray)
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(isUpdatingPayment)
+                    }
+                    .padding(.vertical, 4)
                 }
             }
             
             
             // MARK: - My Pick Section
-            Section("My Pick") {
-                if let selection = mySelection {
-                    if currentWeek.isOpen {
-                        NavigationLink(destination: MatchSelectionView(selection: selection, week: currentWeek)) {
-                            SelectionRow(selection: selection, avatarUrl: profiles[SupabaseService.shared.currentUserId]?.avatarUrl, isLocked: false)
+            Section("My Pick\(mySelections.count > 1 ? "s" : "")") {
+                if !mySelections.isEmpty {
+                    ForEach(mySelections) { selection in
+                        if currentWeek.isOpen {
+                            ZStack {
+                                NavigationLink(destination: MatchSelectionView(selection: selection, week: currentWeek)) {
+                                    EmptyView()
+                                }
+                                .opacity(0)
+                                
+                                SelectionRow(selection: selection, memberName: nil, avatarUrl: nil, isLocked: false)
+                            }
+                        } else {
+                            SelectionRow(selection: selection, memberName: nil, avatarUrl: nil, isLocked: true)
                         }
-                    } else {
-                        SelectionRow(selection: selection, avatarUrl: profiles[SupabaseService.shared.currentUserId]?.avatarUrl, isLocked: true)
+                    }
+                    
+                    if currentWeek.isOpen, mySelections.count < (currentWeek.maxPicksPerMember ?? 1) {
+                         Button {
+                             createMyPick()
+                         } label: {
+                             Text("Add another pick")
+                                 .font(.subheadline)
+                                 .foregroundColor(.blue)
+                         }
                     }
                 } else {
                     if currentWeek.isOpen {
@@ -424,7 +525,7 @@ struct WeekDetailView: View {
                                         .padding(.trailing, 4)
                                 }
                                 Text(isCreatingPick ? "Creating..." : "Make Your Pick")
-                                    .foregroundStyle(Color.blue)
+                                    .foregroundStyle(Color.accentColor)
                                 Spacer()
                                 StatusBadge(status: .pending)
                             }
@@ -438,26 +539,6 @@ struct WeekDetailView: View {
                 }
             }
             
-            // MARK: - Payment Section
-            if let selection = mySelection, !selection.isPaid && selection.teamName != "Pending" {
-                Section {
-                    let adminProfile = profiles[group.adminId]
-                    PaymentModuleSection(
-                        amount: group.stakePerPerson,
-                        recipientName: adminProfile?.username ?? "the Acca Creator",
-                        recipientPhone: adminProfile?.phoneNumber,
-                        onPay: {
-                            markAsPaid(selection: selection)
-                        },
-                        onManual: {
-                            markAsPaid(selection: selection)
-                        }
-                    )
-                    .listRowInsets(EdgeInsets())
-                    .listRowBackground(Color.clear)
-                }
-            }
-            
             // MARK: - Member Picks Section
             Section("Member Picks") {
                 if memberSelections.isEmpty {
@@ -466,8 +547,10 @@ struct WeekDetailView: View {
                         .italic()
                 } else {
                     ForEach(memberSelections, id: \.member.id) { item in
-                        if let selection = item.selection {
-                            SelectionRow(selection: selection, avatarUrl: item.avatarUrl, isLocked: !currentWeek.isOpen)
+                        if !item.selections.isEmpty {
+                            ForEach(item.selections) { selection in
+                                SelectionRow(selection: selection, memberName: item.member.name, avatarUrl: item.avatarUrl, isLocked: !currentWeek.isOpen)
+                            }
                         } else {
                             HStack(spacing: 12) {
                                 ProfileImage(url: item.avatarUrl, size: 32)
@@ -522,12 +605,16 @@ struct WeekDetailView: View {
             let userIds = members.compactMap { $0.userId }
             let fetchedProfiles = try await SupabaseService.shared.fetchProfiles(ids: userIds)
             
+            // Fetch my own profile name just in case AppStorage is totally empty
+            let myProfile = try? await SupabaseService.shared.fetchProfile(id: SupabaseService.shared.currentUserId)
+            
             await MainActor.run {
                 var profileMap: [UUID: Profile] = [:]
                 for p in fetchedProfiles {
                     profileMap[p.id] = p
                 }
                 self.profiles = profileMap
+                self.fetchedUserName = myProfile?.username
                 self.isLoading = false
             }
         } catch {
@@ -581,16 +668,26 @@ struct WeekDetailView: View {
         }
     }
     
-    private func markAsPaid(selection: Selection) {
-        var updated = selection
-        updated.isPaid = true
+    private func togglePaymentStatus(to isPaid: Bool) {
+        guard !mySelections.isEmpty else { return }
+        isUpdatingPayment = true
         
         Task {
             do {
-                try await SupabaseService.shared.saveSelection(updated)
+                for selection in mySelections {
+                    var updated = selection
+                    updated.isPaid = isPaid
+                    try await SupabaseService.shared.saveSelection(updated)
+                }
                 await loadData()
+                await MainActor.run { isUpdatingPayment = false }
             } catch {
-                print("Error marking as paid: \(error)")
+                print("Error updating payment: \(error)")
+                await MainActor.run { 
+                    errorMessage = "Failed to update payment status."
+                    showingErrorAlert = true
+                    isUpdatingPayment = false 
+                }
             }
         }
     }
@@ -614,23 +711,8 @@ struct WeekDetailView: View {
         
         for (date, dateSelections) in groupedByDate {
             do {
-                let requiredLeagueIds = Array(Set(dateSelections.compactMap { LeagueConstants.getID(for: $0.league) }))
-                var allFixtures: [Fixture] = []
-                
-                if requiredLeagueIds.isEmpty {
-                    // Fallback to global fetch if no matching IDs found
-                    let fixturesByComp = try await APIService.shared.fetchFixtures(date: date)
-                    allFixtures = fixturesByComp.values.flatMap { $0 }
-                } else {
-                    try await withThrowingTaskGroup(of: [Competition: [Fixture]].self) { group in
-                        for id in requiredLeagueIds {
-                            group.addTask { try await APIService.shared.fetchFixtures(date: date, leagueId: id) }
-                        }
-                        for try await result in group {
-                            allFixtures.append(contentsOf: result.values.flatMap { $0 })
-                        }
-                    }
-                }
+                let fixturesByComp = try await APIService.shared.fetchFixtures(date: date)
+                var allFixtures = fixturesByComp.values.flatMap { $0 }
                 
                 for var selection in dateSelections {
                     let match = allFixtures.first { fixture in
@@ -774,6 +856,6 @@ struct WeekDetailView: View {
 // Helper struct for display to avoid complex logic in view
 struct MemberSelectionDisplay {
     let member: Member
-    let selection: Selection?
+    let selections: [Selection]
     let avatarUrl: String?
 }
