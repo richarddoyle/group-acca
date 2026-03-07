@@ -1,11 +1,7 @@
 import SwiftUI
 
-struct ScrollOffsetPreferenceKey: PreferenceKey {
-    static var defaultValue: CGFloat = 0
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = nextValue()
-    }
-}
+// Deprecated: No longer using PreferenceKey due to iOS 16 simulator bugs
+// We are extracting geometry frame min Y directly via .onChange now
 
 struct MarketSelectionView: View {
     let fixture: Fixture
@@ -58,7 +54,7 @@ struct MarketSelectionView: View {
         case details = "Game Details"
         case table = "Table"
         case lineups = "Lineup"
-        case stats = "Pick Stats"
+        case stats = "Stats"
     }
     
     init(fixture: Fixture, onSelect: @escaping (String, Double, String?) -> Void, isReadOnly: Bool = false) {
@@ -81,104 +77,140 @@ struct MarketSelectionView: View {
     
     private let glassBackground = Color.black.opacity(0.05)
     
+    // Navigation bar background color blend progress
+    private var progress: Double {
+        min(1.0, max(0.0, -scrollOffset / 60.0))
+    }
+    
     var body: some View {
-        ZStack {
-            // Background
-            Color(.systemGroupedBackground)
-                .ignoresSafeArea()
+        VStack(spacing: 0) {
+            // Fixed Top Navigation Bar
+            customNavigationBar
+                .zIndex(1)
             
-            VStack(spacing: 0) {
-                // Custom Header
-                headerView
-                
-                // Top Level Tabs (Scrollable)
-                topTabBar
-                
-                // Content Area
-                ScrollView {
-                    VStack(spacing: 24) {
-                        switch selectedTopTab {
-                        case .picks:
-                            allMarketsContent
-                        case .details:
-                            gameDetailsTab
-                        case .table:
-                            tableTab
-                        case .lineups:
-                            lineupTab
-                        case .stats:
-                            pickStatsTab
+            ScrollView {
+                VStack(spacing: 0) {
+                    // Tracking node
+                    Color.clear
+                        .frame(height: 0)
+                        .overlay(
+                            GeometryReader { geo in
+                                Color.clear
+                                    .onChange(of: geo.frame(in: .global).minY) { newMinY in
+                                        // The initial position of the view when not scrolled is the baseline
+                                        // We want to track how far UP (negative) it has scrolled from its baseline
+                                        // But we need the initial Y position to act as 0. 
+                                        // To simplify, we track the frame directly inside .named("scroll") coordinate space
+                                    }
+                            }
+                        )
+                        .background(
+                            GeometryReader { geo in
+                                Color.clear
+                                    .onChange(of: geo.frame(in: .named("scroll")).minY) { newValue in
+                                        self.scrollOffset = newValue
+                                    }
+                                    .onAppear {
+                                        self.scrollOffset = geo.frame(in: .named("scroll")).minY
+                                    }
+                            }
+                        )
+                    
+                    // Match Header (Scrolls naturally up)
+                    matchHeaderView
+                    
+                    // Pinned Tabs & Content
+                    LazyVStack(spacing: 0, pinnedViews: [.sectionHeaders]) {
+                        Section(header: topTabBar) {
+                            VStack(spacing: 24) {
+                                switch selectedTopTab {
+                                case .picks: allMarketsContent
+                                case .details: gameDetailsTab
+                                case .table: tableTab
+                                case .lineups: lineupTab
+                                case .stats: pickStatsTab
+                                }
+                            }
+                            .padding(.top, 16)
+                            .padding(.bottom, 40)
+                            .background(Color(.systemGroupedBackground))
                         }
                     }
-                    .background(
-                        GeometryReader { geo in
-                            Color.clear
-                                .preference(key: ScrollOffsetPreferenceKey.self, value: geo.frame(in: .named("scroll")).minY)
-                        }
-                    )
                 }
-                .coordinateSpace(name: "scroll")
-                .onPreferenceChange(ScrollOffsetPreferenceKey.self) { value in
-                    self.scrollOffset = value
-                }
-                
-                Spacer()
             }
+            .coordinateSpace(name: "scroll")
+            .background(Color(.systemGroupedBackground))
         }
+        .background(Color(.systemGroupedBackground))
         .navigationBarHidden(true)
-        .toolbar(.hidden, for: .tabBar) // Hide tab bar if presented here
+        .toolbar(.hidden, for: .tabBar)
         .task {
             await loadMatchData()
         }
     }
     
-    private var headerView: some View {
-        VStack(spacing: 20) {
-            HStack {
-                Button {
-                    dismiss()
-                } label: {
-                    Image(systemName: "chevron.left")
-                        .font(.title3.bold())
-                        .foregroundStyle(.primary)
-                        .padding(12)
-                        .background(glassBackground, in: Circle())
-                }
-                
-                Spacer()
-                
+    private var customNavigationBar: some View {
+        HStack {
+            Button {
+                dismiss()
+            } label: {
+                Image(systemName: "chevron.left")
+                    .font(.title3.bold())
+                    .foregroundStyle(.primary)
+                    .padding(12)
+                    .background(glassBackground, in: Circle())
+            }
+            
+            Spacer()
+            
+            ZStack {
                 Text(fixture.competition.name)
                     .font(.headline)
                     .foregroundStyle(.secondary)
+                    .opacity(1.0 - progress)
                 
-                Spacer()
-                
-                // Placeholder to balance the back button
-                Circle().fill(.clear).frame(width: 44, height: 44)
+                HStack(spacing: 12) {
+                    ClubBadge(url: fixture.homeLogoUrl, size: 24)
+                    
+                    if fixture.status == "NS" || fixture.status == "TBD" {
+                        Text("VS")
+                            .font(.headline.bold())
+                    } else {
+                        Text("\(fixture.homeGoals ?? 0) - \(fixture.awayGoals ?? 0)")
+                            .font(.headline.bold())
+                    }
+                    
+                    ClubBadge(url: fixture.awayLogoUrl, size: 24)
+                }
+                .opacity(progress)
             }
-            .padding(.horizontal)
             
-            // Match Header (Animates on Scroll)
-            let progress = min(1.0, max(0.0, -scrollOffset / 40.0))
+            Spacer()
             
-            HStack(spacing: 16 - (4 * progress)) {
-                teamHeader(name: fixture.homeTeam, logo: fixture.homeLogoUrl, alignment: .trailing, progress: progress)
+            Circle().fill(.clear).frame(width: 44, height: 44)
+        }
+        .padding(.horizontal)
+        .padding(.top, 8)
+        .padding(.bottom, 8)
+        .background(Color(.systemBackground).ignoresSafeArea(edges: .top))
+    }
+    
+    private var matchHeaderView: some View {
+        VStack(spacing: 16) {
+            HStack(spacing: 8) {
+                teamHeader(name: fixture.homeTeam, logo: fixture.homeLogoUrl, alignment: .trailing)
                 
                 VStack(spacing: 4) {
                     if fixture.status == "NS" || fixture.status == "TBD" {
                         Text(fixture.timeString)
                             .font(.caption2.bold())
                             .foregroundStyle(.secondary)
-                            .opacity(1.0 - progress)
-                            .frame(height: 15 * (1.0 - progress))
-                            .clipped()
                         
                         Text("VS")
-                            .font(.system(size: 22 - (6 * progress), weight: .bold))
+                            .font(.system(size: 22, weight: .bold))
                             .italic()
                             .foregroundStyle(Color.accentColor)
                     } else {
-                        // Match has started or finished
                         Text(fixture.status)
                             .font(.caption2.bold())
                             .foregroundStyle(.white)
@@ -187,32 +219,79 @@ struct MarketSelectionView: View {
                             .background(fixture.status == "FT" ? Color.gray : Color.red, in: Capsule())
                         
                         Text("\(fixture.homeGoals ?? 0) - \(fixture.awayGoals ?? 0)")
-                            .font(.system(size: 22 - (6 * progress), weight: .bold))
+                            .font(.system(size: 28, weight: .bold))
                             .foregroundStyle(.primary)
                     }
                 }
-                .frame(width: 80 - (20 * progress))
+                .frame(width: 80)
                 
-                teamHeader(name: fixture.awayTeam, logo: fixture.awayLogoUrl, alignment: .leading, progress: progress)
+                teamHeader(name: fixture.awayTeam, logo: fixture.awayLogoUrl, alignment: .leading)
             }
             .padding(.horizontal)
-            .padding(.bottom, 10 - (6 * progress))
+            
+            // Goal Scorers List
+            if !goalEventsForHeader.home.isEmpty || !goalEventsForHeader.away.isEmpty {
+                HStack(alignment: .top, spacing: 16) {
+                    // Home Goals
+                    VStack(alignment: .trailing, spacing: 6) {
+                        if goalEventsForHeader.home.isEmpty {
+                            Color.clear.frame(height: 0)
+                        } else {
+                            ForEach(goalEventsForHeader.home) { event in
+                                HStack(spacing: 6) {
+                                    Text("\(event.playerName) \(event.elapsed)'\(event.extra != nil ? "+\(event.extra!)'" : "")")
+                                        .font(.caption)
+                                        .foregroundStyle(Color.gray)
+                                    Image(systemName: "soccerball")
+                                        .font(.system(size: 10))
+                                        .foregroundStyle(Color.gray)
+                                }
+                            }
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .trailing)
+                    
+                    // Spacer for the center "VS / Score" column
+                    Color.clear.frame(width: 80)
+                    
+                    // Away Goals
+                    VStack(alignment: .leading, spacing: 6) {
+                        if goalEventsForHeader.away.isEmpty {
+                            Color.clear.frame(height: 0)
+                        } else {
+                            ForEach(goalEventsForHeader.away) { event in
+                                HStack(spacing: 6) {
+                                    Image(systemName: "soccerball")
+                                        .font(.system(size: 10))
+                                        .foregroundStyle(Color.gray)
+                                    Text("\(event.playerName) \(event.elapsed)'\(event.extra != nil ? "+\(event.extra!)'" : "")")
+                                        .font(.caption)
+                                        .foregroundStyle(Color.gray)
+                                }
+                            }
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .padding(.horizontal)
+            }
         }
-        .padding(.top, 10)
+        .opacity(1.0 - progress)
+        .padding(.vertical, 8)
+        .padding(.bottom, 8)
         .background(Color(.systemBackground))
     }
     
-    private func teamHeader(name: String, logo: String?, alignment: HorizontalAlignment, progress: Double) -> some View {
-        VStack(spacing: 12 * (1.0 - progress)) {
-            ClubBadge(url: logo, size: 64 - (32 * progress))
-                .shadow(color: .black.opacity(0.1), radius: 8 * (1.0 - progress), y: 4 * (1.0 - progress))
+    private func teamHeader(name: String, logo: String?, alignment: HorizontalAlignment) -> some View {
+        VStack(spacing: 8) {
+            ClubBadge(url: logo, size: 64)
+                .shadow(color: .black.opacity(0.1), radius: 8, y: 4)
             
             Text(name)
                 .font(.subheadline)
-                .multilineTextAlignment(alignment == .trailing ? .trailing : .leading)
+                .multilineTextAlignment(.center)
                 .lineLimit(2)
-                .opacity(1.0 - progress)
-                .frame(height: 35 * (1.0 - progress))
+                .frame(height: 35)
                 .clipped()
         }
         .frame(maxWidth: .infinity)
@@ -244,7 +323,7 @@ struct MarketSelectionView: View {
         }
         .padding(.top, 10)
         .background(Color(.systemBackground))
-        .shadow(color: .black.opacity(0.05), radius: 2, y: 2)
+        .shadow(color: .black.opacity(progress > 0.8 ? 0.05 : 0.0), radius: 2, y: 2)
     }
     
     @ViewBuilder
@@ -262,6 +341,16 @@ struct MarketSelectionView: View {
         }
     }
     
+    // Processed Goals for Header
+    private var goalEventsForHeader: (home: [MatchEvent], away: [MatchEvent]) {
+        let goals = matchEvents.filter { $0.type == "Goal" && $0.detail != "Missed Penalty" }
+        
+        let homeGoals = goals.filter { $0.teamName == fixture.homeTeam }
+        let awayGoals = goals.filter { $0.teamName == fixture.awayTeam }
+        
+        return (homeGoals, awayGoals)
+    }
+    
     // MARK: - New Tab Views
     
     @ViewBuilder
@@ -271,58 +360,98 @@ struct MarketSelectionView: View {
                 .foregroundStyle(.secondary)
                 .padding()
         } else {
-            VStack(alignment: .leading, spacing: 16) {
-                ForEach(matchEvents) { event in
-                    HStack(spacing: 12) {
-                        Text("\(event.elapsed)'")
-                            .font(.subheadline.bold())
-                            .frame(width: 35, alignment: .trailing)
-                            .foregroundStyle(.secondary)
-                        
-                        // Icon based on type
-                        Group {
-                            if event.type == "Goal" {
-                                Image(systemName: "soccerball")
-                            } else if event.type == "Card" {
-                                Image(systemName: "lanyardcard.fill")
-                                    .foregroundStyle(event.detail.contains("Yellow") ? .yellow : .red)
-                            } else if event.type == "subst" {
-                                Image(systemName: "arrow.left.arrow.right")
-                                    .foregroundStyle(.green)
-                            } else {
-                                Image(systemName: "flag.fill")
+            VStack(alignment: .leading, spacing: 12) {
+                // Reverse chronological order for timeline format
+                ForEach(matchEvents.reversed()) { event in
+                    let isHome = event.teamName == fixture.homeTeam
+                    
+                    HStack(spacing: 16) {
+                        // Time Column
+                        VStack(alignment: .trailing, spacing: 0) {
+                            HStack(alignment: .top, spacing: 2) {
+                                Text("\(event.elapsed)'")
+                                    .font(.subheadline.bold())
+                                    .foregroundStyle(.primary)
+                                if let extra = event.extra {
+                                    Text("+\(extra)'")
+                                        .font(.system(size: 10, weight: .bold))
+                                        .foregroundStyle(.secondary)
+                                }
                             }
                         }
-                        .frame(width: 20)
+                        .frame(width: 45, alignment: .trailing)
                         
-                        VStack(alignment: .leading) {
-                            Text(event.playerName)
-                                .font(.subheadline.bold())
-                            if let assist = event.assistName {
-                                Text("Assist: \(assist)")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            } else if event.type == "subst" {
-                                Text(event.detail)
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
+                        // Icon Column
+                        VStack(alignment: .center, spacing: event.type == "subst" ? 4 : 0) {
+                            if event.type == "subst" {
+                                Image(systemName: "arrow.right.circle.fill")
+                                    .font(.system(size: 14))
+                                    .foregroundStyle(.green)
+                                Image(systemName: "arrow.left.circle.fill")
+                                    .font(.system(size: 14))
+                                    .foregroundStyle(.red)
                             } else {
-                                Text(event.detail)
+                                eventIcon(for: event)
+                            }
+                        }
+                        .frame(width: 24)
+                        
+                        // Details Column
+                        VStack(alignment: .leading, spacing: event.type == "subst" ? 6 : 2) {
+                            if event.type == "subst" {
+                                Text(event.assistName ?? "Unknown")
+                                    .font(.subheadline)
+                                    .foregroundStyle(Color.green)
+                                Text(event.playerName)
                                     .font(.caption)
-                                    .foregroundStyle(.secondary)
+                                    .foregroundStyle(Color.red)
+                            } else {
+                                Text(event.playerName)
+                                    .font(.subheadline.bold())
+                                    .foregroundStyle(.primary)
+                                
+                                if let assist = event.assistName {
+                                    Text("Assist: \(assist)")
+                                        .font(.caption)
+                                        .foregroundStyle(Color(.systemGray))
+                                } else if event.type == "Goal" {
+                                    Text(event.detail)
+                                        .font(.caption)
+                                        .foregroundStyle(Color(.systemGray))
+                                }
                             }
                         }
                         
                         Spacer()
                         
+                        // Team Alignment marker
                         Text(event.teamName)
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
+                            .font(.system(size: 11))
+                            .foregroundStyle(Color(.systemGray3))
+                            .lineLimit(1)
+                            .frame(maxWidth: 80, alignment: .trailing)
                     }
-                    .padding()
-                    .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 12))
+                    .padding(.vertical, 16)
+                    .padding(.horizontal, 16)
+                    .background(Color.white, in: RoundedRectangle(cornerRadius: 12))
+                    .shadow(color: .black.opacity(0.04), radius: 6, y: 3)
                 }
             }
+            .padding(.horizontal)
+        }
+    }
+    
+    @ViewBuilder
+    private func eventIcon(for event: MatchEvent) -> some View {
+        if event.type == "Goal" {
+            Image(systemName: "soccerball")
+        } else if event.type == "Card" {
+            Image(systemName: "rectangle.portrait.fill")
+                .foregroundStyle(event.detail.contains("Yellow") ? .yellow : .red)
+                .rotationEffect(.degrees(10))
+        } else {
+            Image(systemName: "flag.fill")
+                .foregroundStyle(.secondary)
         }
     }
     
@@ -781,16 +910,16 @@ struct TeamFormView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             } else {
-                VStack(spacing: 6) {
+                VStack(spacing: 12) {
                     ForEach(recentFixtures) { match in
                         let isTeamHome = match.homeTeam == teamName
                         let outcome = matchOutcome(for: match, isTeamHome: isTeamHome)
                         let scoreText = "\(match.homeGoals ?? 0) - \(match.awayGoals ?? 0)"
                         
-                        HStack(spacing: 8) {
-                            ClubBadge(url: match.homeLogoUrl, size: 20)
+                        HStack(spacing: 16) {
+                            ClubBadge(url: match.homeLogoUrl, size: 28)
                             matchPill(outcome: outcome, score: scoreText)
-                            ClubBadge(url: match.awayLogoUrl, size: 20)
+                            ClubBadge(url: match.awayLogoUrl, size: 28)
                         }
                     }
                 }
@@ -823,12 +952,12 @@ struct TeamFormView: View {
         }()
         
         Text(score)
-            .font(.caption.bold())
+            .font(.subheadline.bold())
             .monospacedDigit()
             .foregroundStyle(.white)
-            .padding(.horizontal, 6)
-            .padding(.vertical, 2)
-            .background(bgColor, in: RoundedRectangle(cornerRadius: 4))
-            .frame(width: 45) // Fixed width for alignment
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(bgColor, in: RoundedRectangle(cornerRadius: 6))
+            .frame(width: 55) // Fixed width for alignment
     }
 }
