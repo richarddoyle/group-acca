@@ -6,7 +6,7 @@ class SupabaseService {
     
     // Replace with your actual project URL and Anon Key
     private let supabaseURL = URL(string: "https://pbjmyzpbxperewnqwozn.supabase.co")!
-    private let supabaseKey = "sb_publishable_tPmGReQIql1l32FhggOJEA_KPpq4U4R"
+    private let supabaseKey = Secrets.supabaseAnonKey
     
     let client: SupabaseClient
     
@@ -130,7 +130,7 @@ class SupabaseService {
     }
     
     func updateProfile(_ profile: Profile) async throws {
-        var updateDict: [String: AnyJSON] = [
+        let updateDict: [String: AnyJSON] = [
             "username": .string(profile.username),
             "avatar_url": profile.avatarUrl != nil ? .string(profile.avatarUrl!) : .null,
             "apns_token": profile.apnsToken != nil ? .string(profile.apnsToken!) : .null,

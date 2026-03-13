@@ -60,3 +60,6 @@ Carthage/Build/
 *.swp
 *.lock
 .env
+
+# Ignored App Secrets
+WeeklyAcca/Secrets.swift

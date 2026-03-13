@@ -23,7 +23,7 @@ struct MemberProfileView: View {
     @State private var successfulAccas: Int = 0 
     @State private var activeAwards: [ActiveAward] = []
     @State private var currentStreak: Int = 0
-    @State private var last10Picks: [Selection] = []
+    @State private var recentPicks: [Selection] = []
     
     // Derived state for the target user (Admin)
     private var isUserPaid: Bool {
@@ -142,7 +142,7 @@ struct MemberProfileView: View {
                     
                     CurrentFormSectionView(
                         currentStreak: currentStreak,
-                        last10Picks: last10Picks,
+                        recentPicks: recentPicks,
                         memberName: member.name,
                         avatarUrl: avatarUrl
                     )
@@ -209,9 +209,9 @@ struct MemberProfileView: View {
             let badgeManager = GroupBadgeManager()
             await badgeManager.loadBadges(for: group)
             
-            let topWinners = await badgeManager.topWinners
-            let topEarners = await badgeManager.topEarners
-            let streakBadges = await badgeManager.streakBadges
+            let topWinners = badgeManager.topWinners
+            let topEarners = badgeManager.topEarners
+            let streakBadges = badgeManager.streakBadges
             
             if topWinners.contains(membership.id) {
                 newAwards.append(ActiveAward(emoji: "👑", groupName: group.name, description: "Most successful picks in the group."))
@@ -256,7 +256,7 @@ struct MemberProfileView: View {
                     return dateA > dateB
                 }
                 
-            let recentPicks = Array(sortedSelections.prefix(10))
+            let allRecentPicks = sortedSelections
             
             // Streak
             var streak = 0
@@ -274,7 +274,7 @@ struct MemberProfileView: View {
                 self.successfulAccas = successfulAccasCount
                 self.activeAwards = newAwards
                 self.currentStreak = streak
-                self.last10Picks = recentPicks
+                self.recentPicks = allRecentPicks
                 self.isLoadingStats = false
             }
             
@@ -357,18 +357,42 @@ struct ActiveAwardsSectionView: View {
 
 struct CurrentFormSectionView: View {
     let currentStreak: Int
-    let last10Picks: [Selection]
+    let recentPicks: [Selection]
     let memberName: String
     let avatarUrl: String?
+    
+    @State private var displayCount: Int = 10
+    
+    private var displayedPicks: [Selection] {
+        Array(recentPicks.prefix(displayCount))
+    }
     
     var body: some View {
         Section(header: Text("Current Form")) {
             StatRow(label: "Current Win Streak", value: "\(currentStreak)")
             
-            if !last10Picks.isEmpty {
-                ForEach(last10Picks, id: \.id) { pick in
+            if !displayedPicks.isEmpty {
+                ForEach(displayedPicks, id: \.id) { pick in
                     SelectionRow(selection: pick, memberName: memberName, avatarUrl: avatarUrl, isLocked: true, hideBadge: true)
                 }
+                
+                if displayCount < recentPicks.count {
+                    HStack {
+                        Spacer()
+                        ProgressView()
+                            .padding(.vertical, 8)
+                            .onAppear {
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                                    displayCount += 10
+                                }
+                            }
+                        Spacer()
+                    }
+                }
+            } else {
+                Text("No completed picks yet.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
             }
         }
     }

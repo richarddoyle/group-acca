@@ -110,6 +110,7 @@ struct GroupSettingsView: View {
                                 }
                             }) {
                                 Image(systemName: "doc.on.doc")
+                                    .accessibilityLabel("Copy Join Code")
                             }
                             .buttonStyle(.plain)
                             .foregroundStyle(Color.accentColor)

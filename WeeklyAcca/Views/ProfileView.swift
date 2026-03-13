@@ -31,19 +31,7 @@ struct ProfileView: View {
     
     var body: some View {
         NavigationStack {
-            VStack(spacing: 0) {
-                HStack {
-                    Text("Profile")
-                        .font(.largeTitle)
-                        .fontWeight(.bold)
-                    Spacer()
-                }
-                .padding(.horizontal, 20)
-                .padding(.top, 16)
-                .padding(.bottom, 8)
-                .background(Color(.systemGroupedBackground))
-                
-                List {
+            List {
                 Section {
                     VStack(spacing: 20) {
                         // Profile Picture
@@ -170,9 +158,8 @@ struct ProfileView: View {
                     }
                 }
             }
-            }
-            .navigationTitle("")
-            .navigationBarTitleDisplayMode(.inline)
+            .navigationTitle("Profile")
+            .navigationBarTitleDisplayMode(.large)
             .sheet(item: $fieldToEdit) { field in
                 EditProfileFieldView(
                     field: field,

@@ -73,6 +73,8 @@ struct GroupLeaderboardView: View {
                                 .background(selectedMetric == metric ? Color.accentColor : Color(.systemGray5))
                                 .foregroundStyle(selectedMetric == metric ? .white : .primary)
                                 .clipShape(Capsule())
+                                .accessibilityLabel(titleText)
+                                .accessibilityAddTraits(selectedMetric == metric ? .isSelected : [])
                         }
                     }
                 }
@@ -140,6 +142,7 @@ struct GroupLeaderboardView: View {
                                 statView(for: member)
                             }
                             .padding(.vertical, 0)
+                            .accessibilityElement(children: .combine)
                         }
                         .buttonStyle(.plain)
                     }

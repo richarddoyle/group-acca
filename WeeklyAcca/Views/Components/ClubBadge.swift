@@ -18,5 +18,6 @@ struct ClubBadge: View {
             }
         }
         .frame(width: size, height: size)
+        .accessibilityHidden(true)
     }
 }

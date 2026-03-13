@@ -64,6 +64,7 @@ struct DashboardView: View {
                                     )
                             }
                         }
+                        .accessibilityLabel("Group Settings")
                     }
                     .buttonStyle(.plain)
                     
@@ -89,6 +90,7 @@ struct DashboardView: View {
                             } label: {
                                 Image(systemName: "doc.on.doc")
                                     .font(.caption)
+                                    .accessibilityLabel("Copy Join Code")
                             }
                         }
                     }
@@ -318,6 +320,7 @@ struct GroupWeeksView: View {
                             WeekStatusBadge(week: week)
                         }
                         .padding(.vertical, 4)
+                        .accessibilityElement(children: .combine)
                     }
                 }
                 .onDelete(perform: deleteWeeks)
@@ -598,6 +601,7 @@ struct WeekDetailView: View {
                             Image(systemName: isPaid ? "checkmark.circle.fill" : "circle")
                                 .font(.title2)
                                 .foregroundStyle(isPaid ? .green : .gray)
+                                .accessibilityLabel(isPaid ? "Payment confirmed" : "Mark as paid")
                         }
                         .buttonStyle(.plain)
                         .disabled(isUpdatingPayment)

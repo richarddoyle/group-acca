@@ -44,6 +44,7 @@ struct GroupMembersView: View {
                                 }
                             }
                             .padding(.vertical, 4)
+                            .accessibilityElement(children: .combine)
                         }
                         .buttonStyle(.plain)
                     }

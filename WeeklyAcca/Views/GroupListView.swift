@@ -21,19 +21,7 @@ struct GroupListView: View {
     
     var body: some View {
         NavigationStack {
-            VStack(spacing: 0) {
-                HStack {
-                    Text("Groups")
-                        .font(.largeTitle)
-                        .fontWeight(.bold)
-                    Spacer()
-                }
-                .padding(.horizontal, 20)
-                .padding(.top, 16)
-                .padding(.bottom, 8)
-                .background(Color(.systemGroupedBackground))
-                
-                List {
+            List {
                 Section {
                     if isLoading && groupStates.isEmpty {
                         ProgressView()
@@ -105,9 +93,8 @@ struct GroupListView: View {
                     }
                 }
             }
-            }
-            .navigationTitle("")
-            .navigationBarTitleDisplayMode(.inline)
+            .navigationTitle("Groups")
+            .navigationBarTitleDisplayMode(.large)
             .refreshable {
                 await loadGroups()
             }

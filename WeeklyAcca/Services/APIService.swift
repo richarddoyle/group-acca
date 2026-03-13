@@ -2,7 +2,7 @@ import Foundation
 
 class APIService {
     static let shared = APIService()
-    private let apiKey = "f9c66d71cf81e7d8f1960a1bd4d0cbc4"
+    private let apiKey = Secrets.apiSportsKey
     private let baseURL = "https://v3.football.api-sports.io"
     
     private init() {}

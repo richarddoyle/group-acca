@@ -80,19 +80,7 @@ struct StatsView: View {
     }
     
     var body: some View {
-        VStack(spacing: 0) {
-            HStack {
-                Text("My Stats")
-                    .font(.largeTitle)
-                    .fontWeight(.bold)
-                Spacer()
-            }
-            .padding(.horizontal, 20)
-            .padding(.top, 16)
-            .padding(.bottom, 8)
-            .background(Color(.systemGroupedBackground))
-            
-            List {
+        List {
                 Section("Overall") {
                     StatRow(label: "Successful Picks", value: "\(successfulPicks)")
                     StatRow(label: "Successful Pick %", value: successfulPickRate.formatted(.percent.precision(.fractionLength(1))))
@@ -151,9 +139,8 @@ struct StatsView: View {
                     }
                 }
             }
-        }
-        .navigationTitle("")
-        .navigationBarTitleDisplayMode(.inline)
+        .navigationTitle("My Stats")
+        .navigationBarTitleDisplayMode(.large)
         .refreshable {
             await loadStats()
         }
@@ -193,9 +180,9 @@ struct StatsView: View {
                 let badgeManager = GroupBadgeManager()
                 await badgeManager.loadBadges(for: group)
                 
-                let topWinners = await badgeManager.topWinners
-                let topEarners = await badgeManager.topEarners
-                let streakBadges = await badgeManager.streakBadges
+                let topWinners = badgeManager.topWinners
+                let topEarners = badgeManager.topEarners
+                let streakBadges = badgeManager.streakBadges
                 
                 if topWinners.contains(myMemberId) {
                     newAwards.append(ActiveAward(emoji: "👑", groupName: group.name, description: "Most successful picks in the group."))

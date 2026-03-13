@@ -124,6 +124,7 @@ struct SelectionRow: View {
         }
         .padding(.vertical, 8)
         .padding(.horizontal, 4)
+        .accessibilityElement(children: .combine)
     }
     
     private var marketIcon: String {

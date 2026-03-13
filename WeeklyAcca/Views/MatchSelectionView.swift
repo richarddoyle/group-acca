@@ -430,13 +430,20 @@ struct MatchSelectionView: View {
                 uniqueTeams[id] = name
             }
             
-            var allForms: [String: String] = [:]
-            
-            var capturedErrors: [String] = []
             
             await withTaskGroup(of: (String, String, String?).self) { group in
-                for (teamId, teamName) in uniqueTeams {
+                let teamList = Array(uniqueTeams)
+                for (index, team) in teamList.enumerated() {
+                    let teamId = team.key
+                    let teamName = team.value
+                    
                     group.addTask {
+                        // Stagger requests by 0.15s to avoid API-football 10 req/s free tier limit
+                        let delay = Double(index) * 0.15
+                        if delay > 0 {
+                            try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+                        }
+                        
                         do {
                             let recentFixtures = try await APIService.shared.fetchTeamRecentFixtures(teamId: teamId)
                             var formString = ""
@@ -462,21 +469,17 @@ struct MatchSelectionView: View {
                 }
                 
                 for await (teamName, formString, errorResult) in group {
-                    allForms[teamName] = formString
-                    if let errorResult = errorResult {
-                        capturedErrors.append(errorResult)
+                    await MainActor.run {
+                        self.teamForms[teamName] = formString
+                        if let errorResult = errorResult {
+                            self.errorMessage = errorResult
+                        }
                     }
                 }
             }
             
             await MainActor.run {
-                if !capturedErrors.isEmpty {
-                    self.errorMessage = capturedErrors.joined(separator: "\n")
-                }
-                // Merge into existing dictionary to keep previous fetches if applicable
-                for (team, form) in allForms {
-                    self.teamForms[team] = form
-                }
+                self.isFetchingForms = false
             }
         }
     }

@@ -378,9 +378,9 @@ struct MarketSelectionView: View {
                     let isHome = event.teamName == fixture.homeTeam
                     
                     HStack(spacing: 8) {
-                        // Left side (Home)
-                        if isHome {
-                            eventDetailsView(for: event, isHome: true)
+                        // Left side (Away Team)
+                        if !isHome {
+                            eventDetailsView(for: event, isHome: false)
                             eventIconWrapper(for: event)
                         } else {
                             Spacer()
@@ -399,10 +399,10 @@ struct MarketSelectionView: View {
                         }
                         .frame(width: 32, alignment: .center)
                         
-                        // Right side (Away)
-                        if !isHome {
+                        // Right side (Home Team)
+                        if isHome {
                             eventIconWrapper(for: event)
-                            eventDetailsView(for: event, isHome: false)
+                            eventDetailsView(for: event, isHome: true)
                         } else {
                             Spacer()
                         }
@@ -823,7 +823,7 @@ struct MarketSelectionView: View {
             let fetchedInjuries = (try? await injuriesTask) ?? []
             
             if fixture.isKnockout, let leagueId = fixture.competition.apiId {
-                let season = APIService.shared.getCurrentSeasonYear(for: fixture.date) // Temporarily accessing from within MarketSelectionView requires making getCurrentSeasonYear internal, or we can use calendar logic here.
+                // Temporarily accessing from within MarketSelectionView requires making getCurrentSeasonYear internal, or we can use calendar logic here.
                 let calendar = Calendar.current
                 let year = calendar.component(.year, from: fixture.date)
                 let month = calendar.component(.month, from: fixture.date)
