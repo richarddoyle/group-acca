@@ -40,6 +40,16 @@ struct MatchesView: View {
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
+                HStack {
+                    Text("Matches")
+                        .font(.largeTitle)
+                        .fontWeight(.bold)
+                    Spacer()
+                }
+                .padding(.horizontal, 20)
+                .padding(.top, 16)
+                .padding(.bottom, 8)
+                .background(Color(.systemBackground))
                 
                 // Date Tabs
                 ScrollView(.horizontal, showsIndicators: false) {
@@ -127,8 +137,8 @@ struct MatchesView: View {
                     .background(Color(.systemGroupedBackground))
                 }
             }
-            .navigationTitle("Matches")
-            .navigationBarTitleDisplayMode(.large)
+            .navigationTitle("")
+            .navigationBarTitleDisplayMode(.inline)
             .onAppear {
                 loadFixtures()
             }

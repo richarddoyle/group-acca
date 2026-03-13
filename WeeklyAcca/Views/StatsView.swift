@@ -80,7 +80,19 @@ struct StatsView: View {
     }
     
     var body: some View {
-        List {
+        VStack(spacing: 0) {
+            HStack {
+                Text("My Stats")
+                    .font(.largeTitle)
+                    .fontWeight(.bold)
+                Spacer()
+            }
+            .padding(.horizontal, 20)
+            .padding(.top, 16)
+            .padding(.bottom, 8)
+            .background(Color(.systemGroupedBackground))
+            
+            List {
                 Section("Overall") {
                     StatRow(label: "Successful Picks", value: "\(successfulPicks)")
                     StatRow(label: "Successful Pick %", value: successfulPickRate.formatted(.percent.precision(.fractionLength(1))))
@@ -139,8 +151,9 @@ struct StatsView: View {
                     }
                 }
             }
-        .navigationTitle("My Stats")
-        .navigationBarTitleDisplayMode(.large)
+        }
+        .navigationTitle("")
+        .navigationBarTitleDisplayMode(.inline)
         .refreshable {
             await loadStats()
         }
