@@ -2,8 +2,10 @@ import SwiftUI
 
 struct MatchSelectionView: View {
     @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject var badgeManager: GroupBadgeManager
     @State var selection: Selection
     let week: Week? // Pass explicitly
+    let memberSelections: [MemberSelectionDisplay]
     
     @State private var selectedDate: Date = Date()
     @State private var fixtures: [Competition: [Fixture]] = [:]
@@ -37,9 +39,10 @@ struct MatchSelectionView: View {
     @State private var fixtureWarningMessage = ""
     @State private var pendingSelectionCache: (Fixture, String, Double, String?)?
     
-    init(selection: Selection, week: Week? = nil) {
+    init(selection: Selection, week: Week? = nil, memberSelections: [MemberSelectionDisplay] = []) {
         self._selection = State(initialValue: selection)
         self.week = week
+        self.memberSelections = memberSelections
     }
     
     // Generate dates based on Week constraints
@@ -250,12 +253,13 @@ struct MatchSelectionView: View {
                         ContentUnavailableView("No Fixtures", systemImage: "soccerball", description: Text("No matches found for this date in your selected leagues."))
                     } else {
                         VStack(alignment: .leading, spacing: 0) {
-                            if activePill != .none {
-                                pillExplanationView
-                                    .padding(.bottom, 8)
-                            }
-                            
                             List {
+                                if activePill != .none {
+                                    Section {
+                                        pillExplanationView
+                                    }
+                                }
+                                
                             ForEach(filteredCompetitions, id: \.self) { competition in
                                 if let compFixtures = fixtures[competition]?.filter({ $0.status == "NS" && $0.date > Date() }), !compFixtures.isEmpty {
                                     Section {
@@ -263,6 +267,7 @@ struct MatchSelectionView: View {
                                             Button {
                                                 selectedFixture = fixture
                                             } label: {
+                                                let takenInfo = checkTaken(fixture: fixture)
                                                 MatchRowView(
                                                     fixture: fixture,
                                                     homeForm: teamForms[fixture.homeTeam],
@@ -276,7 +281,14 @@ struct MatchSelectionView: View {
                                                     showBtts: activePill == .btts,
                                                     homePosition: teamPositions[fixture.homeTeam],
                                                     awayPosition: teamPositions[fixture.awayTeam],
-                                                    showPositions: activePill == .position
+                                                    showPositions: activePill == .position,
+                                                    isLoadingStats: activePill == .form ? isFetchingForms :
+                                                                    activePill == .cleanSheet ? isFetchingCleanSheets :
+                                                                    activePill == .btts ? isFetchingBtts :
+                                                                    activePill == .position ? isFetchingPositions : false,
+                                                    takenByMember: takenInfo?.name,
+                                                    takenByAvatarUrl: takenInfo?.avatarUrl,
+                                                    takenByBadgeEmoji: takenInfo != nil ? badgeManager.badges[takenInfo!.memberId] : nil
                                                 )
                                                     .padding(.vertical, 4)
                                                     .contentShape(Rectangle())
@@ -331,7 +343,7 @@ struct MatchSelectionView: View {
                 }
                 loadFixtures()
             }
-            .onChange(of: fixtures) { _ in
+            .onChange(of: fixtures) { _, _ in
                 // Re-fetch stats for the new fixtures if a pill is currently active
                 switch activePill {
                 case .form:
@@ -353,15 +365,37 @@ struct MatchSelectionView: View {
         Calendar.current
     }
     
+    private func checkTaken(fixture: Fixture) -> (name: String, avatarUrl: String?, memberId: UUID)? {
+        for memberSelection in memberSelections {
+            if memberSelection.selections.contains(where: { 
+                $0.fixtureId == fixture.apiId || 
+                $0.homeTeamName == fixture.homeTeam && $0.awayTeamName == fixture.awayTeam 
+            }) {
+                return (memberSelection.member.name, memberSelection.avatarUrl, memberSelection.member.id)
+            }
+        }
+        return nil
+    }
+    
     private func loadFixtures() {
         isLoading = true
         errorMessage = nil
         
         Task {
             do {
-                let newFixtures = try await APIService.shared.fetchFixtures(date: selectedDate)
+                let rawFixtures = try await APIService.shared.fetchFixtures(date: selectedDate)
+                
+                var filteredFixtures: [Competition: [Fixture]] = [:]
+                let deadline = week?.startDate ?? Date.distantPast
+                for (comp, fixturesList) in rawFixtures {
+                    let eligible = fixturesList.filter { $0.date > deadline }
+                    if !eligible.isEmpty {
+                        filteredFixtures[comp] = eligible
+                    }
+                }
+                
                 await MainActor.run {
-                    self.fixtures = newFixtures
+                    self.fixtures = filteredFixtures
                     self.isLoading = false
                 }
             } catch {
@@ -377,31 +411,72 @@ struct MatchSelectionView: View {
         isFetchingForms = true
         
         Task {
-            let competitions = filteredCompetitions
+            defer {
+                Task { @MainActor in
+                    self.isFetchingForms = false
+                }
+            }
+            
+            var teamsToFetch: [(Int, String)] = []
+            for fixturesList in fixtures.values {
+                for f in fixturesList {
+                    if let hid = f.homeTeamId { teamsToFetch.append((hid, f.homeTeam)) }
+                    if let aid = f.awayTeamId { teamsToFetch.append((aid, f.awayTeam)) }
+                }
+            }
+            
+            var uniqueTeams: [Int: String] = [:]
+            for (id, name) in teamsToFetch {
+                uniqueTeams[id] = name
+            }
+            
             var allForms: [String: String] = [:]
             
-            for comp in competitions {
-                guard let apiId = comp.apiId else { continue }
-                do {
-                    let season = getCurrentSeasonYear(for: selectedDate)
-                    let standings = try await APIService.shared.fetchStandings(leagueId: apiId, season: season)
-                    
-                    for row in standings {
-                        if !row.form.isEmpty {
-                            allForms[row.teamName] = row.form
+            var capturedErrors: [String] = []
+            
+            await withTaskGroup(of: (String, String, String?).self) { group in
+                for (teamId, teamName) in uniqueTeams {
+                    group.addTask {
+                        do {
+                            let recentFixtures = try await APIService.shared.fetchTeamRecentFixtures(teamId: teamId)
+                            var formString = ""
+                            // Process oldest to newest so the most recent result is on the right
+                            for f in recentFixtures.reversed() {
+                                guard let homeScore = f.homeGoals, let awayScore = f.awayGoals else { continue }
+                                let isHome = f.homeTeamId == teamId
+                                let isAway = f.awayTeamId == teamId
+                                
+                                if homeScore == awayScore {
+                                    formString += "D"
+                                } else if isHome {
+                                    formString += (homeScore > awayScore) ? "W" : "L"
+                                } else if isAway {
+                                    formString += (awayScore > homeScore) ? "W" : "L"
+                                }
+                            }
+                            return (teamName, formString.isEmpty ? "---" : formString, nil)
+                        } catch {
+                            return (teamName, "---", "API Error for \(teamName): \(error.localizedDescription)")
                         }
                     }
-                } catch {
-                    print("Failed to fetch forms for league \(comp.name): \(error)")
+                }
+                
+                for await (teamName, formString, errorResult) in group {
+                    allForms[teamName] = formString
+                    if let errorResult = errorResult {
+                        capturedErrors.append(errorResult)
+                    }
                 }
             }
             
             await MainActor.run {
+                if !capturedErrors.isEmpty {
+                    self.errorMessage = capturedErrors.joined(separator: "\n")
+                }
                 // Merge into existing dictionary to keep previous fetches if applicable
                 for (team, form) in allForms {
                     self.teamForms[team] = form
                 }
-                self.isFetchingForms = false
             }
         }
     }
@@ -414,50 +489,53 @@ struct MatchSelectionView: View {
             let competitions = filteredCompetitions
             var allCleanSheets: [String: Int] = [:]
             
-            for comp in competitions {
-                guard let apiId = comp.apiId else { continue }
-                do {
-                    let season = getCurrentSeasonYear(for: selectedDate)
-                    let fixtures = try await APIService.shared.fetchFinishedFixtures(leagueId: apiId, season: season)
-                    
-                    var teamStats: [String: (played: Int, cleanSheets: Int)] = [:]
-                    
-                    // Aggregate stats for each team
-                    for fixture in fixtures {
-                        // Home team stats
-                        if let awayGoals = fixture.awayGoals {
-                            teamStats[fixture.homeTeam, default: (0, 0)].played += 1
-                            if awayGoals == 0 {
-                                teamStats[fixture.homeTeam]?.cleanSheets += 1
+            let season = APIService.shared.getCurrentSeasonYear(for: selectedDate)
+            
+            await withTaskGroup(of: [String: Int]?.self) { group in
+                for comp in competitions {
+                    guard let apiId = comp.apiId else { continue }
+                    group.addTask {
+                        do {
+                            let fixtures = try await APIService.shared.fetchFinishedFixtures(leagueId: apiId, season: season)
+                            
+                            var teamStats: [String: (played: Int, csCount: Int)] = [:]
+                            
+                            for fixture in fixtures {
+                                if let homeGoals = fixture.homeGoals, let awayGoals = fixture.awayGoals {
+                                    let homeCleanSheet = awayGoals == 0
+                                    let awayCleanSheet = homeGoals == 0
+                                    
+                                    teamStats[fixture.homeTeam, default: (0, 0)].played += 1
+                                    if homeCleanSheet { teamStats[fixture.homeTeam]?.csCount += 1 }
+                                    
+                                    teamStats[fixture.awayTeam, default: (0, 0)].played += 1
+                                    if awayCleanSheet { teamStats[fixture.awayTeam]?.csCount += 1 }
+                                }
                             }
-                        }
-                        
-                        // Away team stats
-                        if let homeGoals = fixture.homeGoals {
-                            teamStats[fixture.awayTeam, default: (0, 0)].played += 1
-                            if homeGoals == 0 {
-                                teamStats[fixture.awayTeam]?.cleanSheets += 1
+                            
+                            var leagueCleanSheets: [String: Int] = [:]
+                            for (team, stats) in teamStats {
+                                if stats.played > 0 {
+                                    leagueCleanSheets[team] = Int((Double(stats.csCount) / Double(stats.played)) * 100)
+                                }
                             }
+                            return leagueCleanSheets
+                        } catch {
+                            print("Failed to fetch fixtures for Clean Sheets for league \(comp.name): \(error)")
+                            return nil
                         }
                     }
-                    
-                    // Calculate percentage
-                    for (team, stats) in teamStats {
-                        if stats.played > 0 {
-                            let percentage = Int((Double(stats.cleanSheets) / Double(stats.played)) * 100)
-                            allCleanSheets[team] = percentage
-                        }
+                }
+                
+                for await result in group {
+                    if let result = result {
+                        allCleanSheets.merge(result) { current, _ in current }
                     }
-                    
-                } catch {
-                    print("Failed to fetch fixtures for clean sheets for league \(comp.name): \(error)")
                 }
             }
             
             await MainActor.run {
-                for (team, cleanSheetPercentage) in allCleanSheets {
-                    self.teamCleanSheets[team] = cleanSheetPercentage
-                }
+                self.teamCleanSheets = allCleanSheets
                 self.isFetchingCleanSheets = false
             }
         }
@@ -471,35 +549,48 @@ struct MatchSelectionView: View {
             let competitions = filteredCompetitions
             var allBtts: [String: Int] = [:]
             
-            for comp in competitions {
-                guard let apiId = comp.apiId else { continue }
-                do {
-                    let season = getCurrentSeasonYear(for: selectedDate)
-                    let fixtures = try await APIService.shared.fetchFinishedFixtures(leagueId: apiId, season: season)
-                    
-                    var teamStats: [String: (played: Int, bttsCount: Int)] = [:]
-                    
-                    for fixture in fixtures {
-                        if let homeGoals = fixture.homeGoals, let awayGoals = fixture.awayGoals {
-                            let isBtts = homeGoals > 0 && awayGoals > 0
+            let season = APIService.shared.getCurrentSeasonYear(for: selectedDate)
+            
+            await withTaskGroup(of: [String: Int]?.self) { group in
+                for comp in competitions {
+                    guard let apiId = comp.apiId else { continue }
+                    group.addTask {
+                        do {
+                            let fixtures = try await APIService.shared.fetchFinishedFixtures(leagueId: apiId, season: season)
                             
-                            teamStats[fixture.homeTeam, default: (0, 0)].played += 1
-                            if isBtts { teamStats[fixture.homeTeam]?.bttsCount += 1 }
+                            var teamStats: [String: (played: Int, bttsCount: Int)] = [:]
                             
-                            teamStats[fixture.awayTeam, default: (0, 0)].played += 1
-                            if isBtts { teamStats[fixture.awayTeam]?.bttsCount += 1 }
+                            for fixture in fixtures {
+                                if let homeGoals = fixture.homeGoals, let awayGoals = fixture.awayGoals {
+                                    let isBtts = homeGoals > 0 && awayGoals > 0
+                                    
+                                    teamStats[fixture.homeTeam, default: (0, 0)].played += 1
+                                    if isBtts { teamStats[fixture.homeTeam]?.bttsCount += 1 }
+                                    
+                                    teamStats[fixture.awayTeam, default: (0, 0)].played += 1
+                                    if isBtts { teamStats[fixture.awayTeam]?.bttsCount += 1 }
+                                }
+                            }
+                            
+                            var leagueBtts: [String: Int] = [:]
+                            for (team, stats) in teamStats {
+                                if stats.played > 0 {
+                                    leagueBtts[team] = Int((Double(stats.bttsCount) / Double(stats.played)) * 100)
+                                }
+                            }
+                            return leagueBtts
+                            
+                        } catch {
+                            print("Failed to fetch fixtures for BTTS for league \(comp.name): \(error)")
+                            return nil
                         }
                     }
-                    
-                    for (team, stats) in teamStats {
-                        if stats.played > 0 {
-                            let percentage = Int((Double(stats.bttsCount) / Double(stats.played)) * 100)
-                            allBtts[team] = percentage
-                        }
+                }
+                
+                for await result in group {
+                    if let result = result {
+                        allBtts.merge(result) { current, _ in current }
                     }
-                    
-                } catch {
-                    print("Failed to fetch fixtures for BTTS for league \(comp.name): \(error)")
                 }
             }
             
@@ -520,17 +611,31 @@ struct MatchSelectionView: View {
             let competitions = filteredCompetitions
             var allPositions: [String: Int] = [:]
             
-            for comp in competitions {
-                guard let apiId = comp.apiId else { continue }
-                do {
-                    let season = getCurrentSeasonYear(for: selectedDate)
-                    let standings = try await APIService.shared.fetchStandings(leagueId: apiId, season: season)
-                    
-                    for row in standings {
-                        allPositions[row.teamName] = row.rank
+            let season = APIService.shared.getCurrentSeasonYear(for: selectedDate)
+            
+            await withTaskGroup(of: [String: Int]?.self) { group in
+                for comp in competitions {
+                    guard let apiId = comp.apiId else { continue }
+                    group.addTask {
+                        do {
+                            let standings = try await APIService.shared.fetchStandings(leagueId: apiId, season: season)
+                            
+                            var leaguePositions: [String: Int] = [:]
+                            for row in standings {
+                                leaguePositions[row.teamName] = row.rank
+                            }
+                            return leaguePositions
+                        } catch {
+                            print("Failed to fetch positions for league \(comp.name): \(error)")
+                            return nil
+                        }
                     }
-                } catch {
-                    print("Failed to fetch positions for league \(comp.name): \(error)")
+                }
+                
+                for await result in group {
+                    if let result = result {
+                        allPositions.merge(result) { current, _ in current }
+                    }
                 }
             }
             
@@ -563,7 +668,7 @@ struct MatchSelectionView: View {
                 let otherMembersPicks = allSelections.filter { $0.memberId != selection.memberId }
                 
                 // 1. Check for Exact Duplicate
-                if let duplicate = otherMembersPicks.first(where: { $0.fixtureId == fixture.apiId && $0.teamName == team }) {
+                if otherMembersPicks.contains(where: { $0.fixtureId == fixture.apiId && $0.teamName == team }) {
                     await MainActor.run {
                         isLoading = false
                         duplicateErrorMessage = "Another member has already selected \(team) for this match. Please make a different pick."
@@ -737,33 +842,29 @@ struct FixtureCard: View {
 extension MatchSelectionView {
     @ViewBuilder
     private var pillExplanationView: some View {
-        switch activePill {
-        case .none:
-            EmptyView()
-        case .form:
-            Text("Form is based on the result of the team's last 5 league matches.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .padding(.horizontal)
-                .padding(.top, 8)
-        case .cleanSheet:
-            Text("Percentage of league matches where the team conceded 0 goals.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .padding(.horizontal)
-                .padding(.top, 8)
-        case .btts:
-            Text("Percentage of league matches where BOTH teams scored at least 1 goal.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .padding(.horizontal)
-                .padding(.top, 8)
-        case .position:
-            Text("The team's current position in their league standings.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .padding(.horizontal)
-                .padding(.top, 8)
+        let explanationText: String? = {
+            switch activePill {
+            case .none: return nil
+            case .form: return "Form is based on the result of the team's last 5 games regardless of the competition."
+            case .cleanSheet: return "Percentage of league matches where the team conceded 0 goals."
+            case .btts: return "Percentage of league matches where BOTH teams scored at least 1 goal."
+            case .position: return "The team's current position in their league standings."
+            }
+        }()
+
+        if let text = explanationText {
+            HStack(alignment: .top, spacing: 12) {
+                Image(systemName: "info.circle")
+                    .foregroundStyle(.secondary)
+                    .font(.body)
+                
+                Text(text)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                
+                Spacer(minLength: 0)
+            }
+            .padding(.vertical, 4)
         }
     }
 }

@@ -7,6 +7,7 @@ enum DashboardTab: String, CaseIterable {
 }
 
 struct DashboardView: View {
+    @StateObject private var badgeManager = GroupBadgeManager()
     @State private var currentGroup: BettingGroup
     @Binding var selectedGroup: BettingGroup?
     
@@ -152,6 +153,7 @@ struct DashboardView: View {
                                 .font(.body.weight(.semibold))
                             Text("Groups")
                         }
+                        .foregroundStyle(.primary)
                     }
                 }
                 
@@ -190,6 +192,7 @@ struct DashboardView: View {
                         ),
                         week: week
                      )
+                     .environmentObject(badgeManager)
                 }
             }
             .navigationDestination(isPresented: $showingSettings) {
@@ -198,6 +201,7 @@ struct DashboardView: View {
                 })
             }
         }
+        .environmentObject(badgeManager)
         .overlay(alignment: .bottom) {
             if showCopyToast {
                 Text("Copied to clipboard")
@@ -214,6 +218,7 @@ struct DashboardView: View {
         }
         .task {
             await loadWeeks()
+            await badgeManager.loadBadges(for: currentGroup)
         }
     }
     
@@ -287,6 +292,10 @@ struct GroupWeeksView: View {
     @Binding var path: NavigationPath
     var onRefresh: () async -> Void
     
+    @State private var showingDeleteConfirmation = false
+    @State private var weekToDelete: Week?
+    @State private var offsetsToDelete: IndexSet?
+    
     var body: some View {
         List {
             Section {
@@ -320,9 +329,30 @@ struct GroupWeeksView: View {
             // Need a way to trigger parent refresh... adding a closure
             await onRefresh()
         }
+        .alert("Delete Accumulator?", isPresented: $showingDeleteConfirmation) {
+            Button("Delete", role: .destructive) {
+                confirmDelete()
+            }
+            Button("Cancel", role: .cancel) {
+                weekToDelete = nil
+                offsetsToDelete = nil
+            }
+        } message: {
+            Text("This will permanently delete the accumulator and all associated stats. Are you sure?")
+        }
     }
     
     private func deleteWeeks(offsets: IndexSet) {
+        if let index = offsets.first {
+            weekToDelete = weeks[index]
+            offsetsToDelete = offsets
+            showingDeleteConfirmation = true
+        }
+    }
+    
+    private func confirmDelete() {
+        guard let offsets = offsetsToDelete, let _ = weekToDelete else { return }
+        
         let weeksToRemove = offsets.map { weeks[$0] }
         
         // Optimistically update UI
@@ -338,6 +368,8 @@ struct GroupWeeksView: View {
                 }
             }
         }
+        weekToDelete = nil
+        offsetsToDelete = nil
     }
 }
 
@@ -357,6 +389,9 @@ struct WeekDetailView: View {
     
     @State private var showingErrorAlert: Bool = false
     @State private var errorMessage: String = ""
+    @State private var selectedMemberForAdmin: MemberSelectionDisplay? = nil
+    
+    @EnvironmentObject var badgeManager: GroupBadgeManager
     
     init(week: Binding<Week>, group: BettingGroup, path: Binding<NavigationPath>) {
         self._week = week
@@ -366,6 +401,7 @@ struct WeekDetailView: View {
     }
     
     @State private var fetchedUserName: String? = nil
+    @State private var myMonzoUsername: String? = nil
     
     // Robustly identify the current user's Member record across auth states
     private var currentUserMember: Member? {
@@ -402,14 +438,26 @@ struct WeekDetailView: View {
                 return MemberSelectionDisplay(member: member, selections: memberPicks, avatarUrl: avatarUrl)
             }
     }
+    // Statistics
+    private var totalMembersCount: Int { members.count }
+    private var membersWithPicksCount: Int { Set(selections.filter { $0.teamName != "Pending" }.map { $0.memberId }).count }
+    private var membersPaidCount: Int { Set(selections.filter { $0.isPaid }.map { $0.memberId }).count }
     
     // Financials
+    private var paidSelections: [Selection] {
+        selections.filter { $0.isPaid }
+    }
+    
     private var totalStake: Double {
-        Double(selections.count) * group.stakePerPerson
+        let stake = currentWeek.stakePerPick ?? group.stakePerPerson
+        return Double(paidSelections.count) * stake
     }
     
     private var potentialWinnings: Double {
-        let combinedOdds = selections.reduce(1.0) { result, selection in
+        // If no one has paid, potential returns are 0
+        if paidSelections.isEmpty { return 0.0 }
+        
+        let combinedOdds = paidSelections.reduce(1.0) { result, selection in
             let odds = selection.odds > 0 ? selection.odds : 1.0
             return result * odds
         }
@@ -432,6 +480,23 @@ struct WeekDetailView: View {
         return .pending
     }
     
+    // Creator identification
+    private var creatorName: String? {
+        guard let creatorId = currentWeek.creatorId else { return nil }
+        
+        // If the current user is the creator
+        if SupabaseService.shared.currentUserId == creatorId {
+            return "You"
+        }
+        
+        // Find the creator in the members list
+        if let creatorMember = members.first(where: { $0.userId == creatorId }) {
+            return creatorMember.name
+        }
+        
+        return nil
+    }
+    
     var body: some View {
         List {
             Section {
@@ -441,7 +506,7 @@ struct WeekDetailView: View {
                         Spacer()
                         if liveStatus == .pending {
                             if currentWeek.isOpen {
-                                StatusBadge(status: .pending, label: "Open", color: Color.accentColor)
+                                StatusBadge(status: .pending, label: "Open", color: .blue)
                             } else {
                                 StatusBadge(status: .pending, label: "In Progress", color: .orange)
                             }
@@ -451,9 +516,64 @@ struct WeekDetailView: View {
                     }
                     
                     if currentWeek.isOpen {
-                        Text("Picks lock at \(currentWeek.startDate.formatted(date: .abbreviated, time: .shortened))")
+                        HStack(spacing: 6) {
+                            Image(systemName: "lock")
+                                .foregroundStyle(.secondary)
+                                .frame(width: 16)
+                            Text("Picks lock on \(formatLockDate(currentWeek.startDate))")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        
+                        let currentStake = currentWeek.stakePerPick ?? group.stakePerPerson
+                        HStack(spacing: 6) {
+                            Image(systemName: "banknote")
+                                .foregroundStyle(.secondary)
+                                .frame(width: 16)
+                            Text("Stake is £\(String(format: "%.2f", currentStake)) per pick")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    
+                    HStack(spacing: 6) {
+                        Image(systemName: "list.bullet.clipboard")
+                            .foregroundStyle(.secondary)
+                            .frame(width: 16)
+                        Text("\(membersWithPicksCount)/\(totalMembersCount) members have made a pick")
                             .font(.caption)
                             .foregroundStyle(.secondary)
+                    }
+                    
+                    HStack(spacing: 6) {
+                        Image(systemName: "sterlingsign.circle")
+                            .foregroundStyle(.secondary)
+                            .frame(width: 16)
+                        Text("\(membersPaidCount)/\(totalMembersCount) members paid")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    
+                    if let name = creatorName {
+                        HStack(spacing: 6) {
+                            Image(systemName: "person.fill")
+                                .foregroundStyle(.secondary)
+                                .frame(width: 16)
+                            Text("\(name) \(name == "You" ? "are" : "is") the acca owner")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    
+                    if liveStatus == .pending && !currentWeek.isOpen {
+                        HStack(spacing: 6) {
+                            Image(systemName: "arrow.up.right.circle")
+                                .foregroundStyle(.secondary)
+                                .frame(width: 16)
+                            Text("The total stake is £\(String(format: "%.2f", totalStake)) and the estimate return is £\(String(format: "%.2f", potentialWinnings))")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
                     }
                 }
                 .padding(.vertical, 2)
@@ -463,8 +583,9 @@ struct WeekDetailView: View {
                         VStack(alignment: .leading, spacing: 4) {
                             Text("Payment Confirmation")
                                 .font(.headline)
-                            let totalStake = group.stakePerPerson * Double(mySelections.count)
-                            Text("I have paid my £\(String(format: "%.2f", totalStake)) stake")
+                            let currentStake = currentWeek.stakePerPick ?? group.stakePerPerson
+                            let totalStakeCost = currentStake * Double(mySelections.count)
+                            Text("I have paid my £\(String(format: "%.2f", totalStakeCost)) stake")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
@@ -482,6 +603,33 @@ struct WeekDetailView: View {
                         .disabled(isUpdatingPayment)
                     }
                     .padding(.vertical, 4)
+                    
+                    if let monzoUser = currentWeek.monzoUsername, !monzoUser.isEmpty, monzoUser != myMonzoUsername {
+                        let currentStake = currentWeek.stakePerPick ?? group.stakePerPerson
+                        let totalStakeCost = currentStake * Double(mySelections.count)
+                        
+                        Button {
+                            let urlString = "https://monzo.me/\(monzoUser)/\(String(format: "%.2f", totalStakeCost))"
+                            if let url = URL(string: urlString) {
+                                UIApplication.shared.open(url)
+                            }
+                        } label: {
+                            HStack {
+                                Spacer()
+                                Image(systemName: "sterlingsign.circle.fill")
+                                let ownerName = creatorName ?? "Owner"
+                                Text("Pay \(ownerName) £\(String(format: "%.2f", totalStakeCost)) via Monzo")
+                                    .fontWeight(.semibold)
+                                Spacer()
+                            }
+                            .padding()
+                            .background(Color.accentColor.opacity(0.15))
+                            .foregroundStyle(Color.accentColor)
+                            .clipShape(RoundedRectangle(cornerRadius: 12))
+                        }
+                        .buttonStyle(.plain)
+                        .padding(.bottom, 4)
+                    }
                 }
             }
             
@@ -492,7 +640,7 @@ struct WeekDetailView: View {
                     ForEach(mySelections) { selection in
                         if currentWeek.isOpen {
                             ZStack {
-                                NavigationLink(destination: MatchSelectionView(selection: selection, week: currentWeek)) {
+                                NavigationLink(destination: MatchSelectionView(selection: selection, week: currentWeek, memberSelections: memberSelections)) {
                                     EmptyView()
                                 }
                                 .opacity(0)
@@ -514,28 +662,8 @@ struct WeekDetailView: View {
                          }
                     }
                 } else {
-                    if currentWeek.isOpen {
-                        Button {
-                            createMyPick()
-                        } label: {
-                            HStack {
-                                if isCreatingPick {
-                                    ProgressView()
-                                        .controlSize(.small)
-                                        .padding(.trailing, 4)
-                                }
-                                Text(isCreatingPick ? "Creating..." : "Make Your Pick")
-                                    .foregroundStyle(Color.accentColor)
-                                Spacer()
-                                StatusBadge(status: .pending)
-                            }
-                        }
-                        .disabled(isLoading || isCreatingPick || members.isEmpty)
-                    } else {
-                         Text("Locked - no pick made")
-                            .foregroundStyle(.secondary)
-                            .italic()
-                    }
+                    Text("you are not included in this acca")
+                        .foregroundStyle(.secondary)
                 }
             }
             
@@ -547,19 +675,27 @@ struct WeekDetailView: View {
                         .italic()
                 } else {
                     ForEach(memberSelections, id: \.member.id) { item in
-                        if !item.selections.isEmpty {
-                            ForEach(item.selections) { selection in
-                                SelectionRow(selection: selection, memberName: item.member.name, avatarUrl: item.avatarUrl, isLocked: !currentWeek.isOpen)
+                        Group {
+                            if !item.selections.isEmpty {
+                                ForEach(item.selections) { selection in
+                                    SelectionRow(selection: selection, memberName: item.member.name, avatarUrl: item.avatarUrl, isLocked: !currentWeek.isOpen)
+                                }
+                            } else {
+                                HStack(spacing: 12) {
+                                    ProfileImage(url: item.avatarUrl, size: 32)
+                                    Text("\(item.member.name)\(badgeManager.emoji(for: item.member.id, context: .general).map { " \($0)" } ?? "")")
+                                        .font(.subheadline)
+                                    Spacer()
+                                    Text("No Pick")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
                             }
-                        } else {
-                            HStack(spacing: 12) {
-                                ProfileImage(url: item.avatarUrl, size: 32)
-                                Text(item.member.name)
-                                    .font(.subheadline)
-                                Spacer()
-                                Text("No Pick")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
+                        }
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            if SupabaseService.shared.currentUserId == group.adminId {
+                                selectedMemberForAdmin = item
                             }
                         }
                     }
@@ -581,6 +717,18 @@ struct WeekDetailView: View {
         }, message: {
             Text(errorMessage)
         })
+        .sheet(item: $selectedMemberForAdmin) { memberDisplay in
+            MemberProfileView(
+                member: memberDisplay.member,
+                group: group,
+                avatarUrl: memberDisplay.avatarUrl,
+                week: currentWeek,
+                selections: memberDisplay.selections,
+                onUpdateRow: {
+                    Task { await loadData() }
+                }
+            )
+        }
     }
     
     private func loadData() async {
@@ -600,6 +748,7 @@ struct WeekDetailView: View {
             // Sync match results for pending selections that should be finished or live
             await syncMatchResults()
             await updateWeekStatusIfNeeded()
+            evaluateLiveActivity()
             
             // Fetch profiles for avatars
             let userIds = members.compactMap { $0.userId }
@@ -615,6 +764,7 @@ struct WeekDetailView: View {
                 }
                 self.profiles = profileMap
                 self.fetchedUserName = myProfile?.username
+                self.myMonzoUsername = myProfile?.monzoUsername
                 self.isLoading = false
             }
         } catch {
@@ -668,6 +818,30 @@ struct WeekDetailView: View {
         }
     }
     
+    private func formatLockDate(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "EEEE d"
+        let dayString = formatter.string(from: date)
+        
+        let day = Calendar.current.component(.day, from: date)
+        let suffix: String
+        switch day {
+        case 11, 12, 13: suffix = "th"
+        default:
+            switch day % 10 {
+            case 1: suffix = "st"
+            case 2: suffix = "nd"
+            case 3: suffix = "rd"
+            default: suffix = "th"
+            }
+        }
+        
+        formatter.dateFormat = "MMMM 'at' h:mma zzz"
+        let restOfString = formatter.string(from: date)
+        
+        return "\(dayString)\(suffix) \(restOfString)"
+    }
+    
     private func togglePaymentStatus(to isPaid: Bool) {
         guard !mySelections.isEmpty else { return }
         isUpdatingPayment = true
@@ -712,7 +886,7 @@ struct WeekDetailView: View {
         for (date, dateSelections) in groupedByDate {
             do {
                 let fixturesByComp = try await APIService.shared.fetchFixtures(date: date)
-                var allFixtures = fixturesByComp.values.flatMap { $0 }
+                let allFixtures = fixturesByComp.values.flatMap { $0 }
                 
                 for var selection in dateSelections {
                     let match = allFixtures.first { fixture in
@@ -776,6 +950,7 @@ struct WeekDetailView: View {
                     }
                 }
             }
+            evaluateLiveActivity()
         }
     }
     
@@ -808,6 +983,73 @@ struct WeekDetailView: View {
             } catch {
                 print("Error updating week status: \(error)")
             }
+            evaluateLiveActivity()
+        }
+    }
+    
+    private func evaluateLiveActivity() {
+        guard currentWeek.isOpen == false else {
+             // Don't show live activities for open accas
+             LiveActivityManager.shared.endActivity()
+             return
+        }
+                
+        if currentWeek.status == .pending {
+            // Find the current active pick (earliest pending/live match)
+            let sortedPicks = selections.sorted { ($0.kickoffTime ?? Date.distantFuture) < ($1.kickoffTime ?? Date.distantFuture) }
+            
+            // Look for live matches first
+            var activePick = sortedPicks.first { $0.matchStatus == "1H" || $0.matchStatus == "2H" || $0.matchStatus == "HT" }
+            
+            // If no live matches, find the next pending one
+            if activePick == nil {
+                activePick = sortedPicks.first { $0.outcome == .pending && $0.matchStatus != "FT" && $0.teamName != "Pending" }
+            }
+            
+            if let activePick = activePick {
+                let correctCount = selections.filter { $0.outcome == .win }.count
+                let totalCount = selections.filter { $0.teamName != "Pending" }.count
+                
+                let state = AccaActivityAttributes.ContentState(
+                    statusText: "In Progress",
+                    correctPicks: correctCount,
+                    totalPicks: totalCount,
+                    currentPickMatch: "\(activePick.homeTeamName ?? "?") vs \(activePick.awayTeamName ?? "?")",
+                    currentPickSelection: activePick.teamName,
+                    currentPickScore: "\(activePick.homeScore ?? 0) - \(activePick.awayScore ?? 0)",
+                    currentPickTime: activePick.matchStatus ?? "Upcoming",
+                    currentPickStatus: "pending" // We could calculate if it's currently winning/losing based on live score
+                )
+                
+                LiveActivityManager.shared.startActivity(accaName: currentWeek.title, groupName: group.name, state: state)
+                LiveActivityManager.shared.updateActivity(state: state)
+            } else {
+                 // All picks are done but week status hasn't updated yet? End it to be safe.
+                 LiveActivityManager.shared.endActivity()
+            }
+        } else {
+             // Week is won/lost
+             let finalStatus = currentWeek.status == .won ? "Won! 🎉" : "Lost 😢"
+             let correctCount = selections.filter { $0.outcome == .win }.count
+             let totalCount = selections.filter { $0.teamName != "Pending" }.count
+             
+             let state = AccaActivityAttributes.ContentState(
+                 statusText: finalStatus,
+                 correctPicks: correctCount,
+                 totalPicks: totalCount,
+                 currentPickMatch: "Finished",
+                 currentPickSelection: "-",
+                 currentPickScore: "-",
+                 currentPickTime: "FT",
+                 currentPickStatus: currentWeek.status == .won ? "winning" : "losing"
+             )
+             
+             LiveActivityManager.shared.updateActivity(state: state)
+             
+             // Optionally delay ending it so the user can see the final state
+             DispatchQueue.main.asyncAfter(deadline: .now() + 10) {
+                 LiveActivityManager.shared.endActivity()
+             }
         }
     }
     
@@ -854,7 +1096,9 @@ struct WeekDetailView: View {
     
 
 // Helper struct for display to avoid complex logic in view
-struct MemberSelectionDisplay {
+// Helper struct for display to avoid complex logic in view
+struct MemberSelectionDisplay: Identifiable {
+    var id: UUID { member.id }
     let member: Member
     let selections: [Selection]
     let avatarUrl: String?

@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 struct PaymentModuleSection: View {
     let amount: Double
@@ -79,5 +80,5 @@ struct PaymentModuleSection: View {
             .padding()
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity)
-    .background(Color(.systemGroupedBackground))
+    .background(Color(uiColor: .systemGroupedBackground))
 }

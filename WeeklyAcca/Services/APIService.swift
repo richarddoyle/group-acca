@@ -67,7 +67,8 @@ class APIService {
         }
         
         if apiResponse.response.isEmpty {
-            print("API returned 0 fixtures for this query (results: \(apiResponse.results)).")
+            let resultsCount = apiResponse.results ?? 0
+            print("API returned 0 fixtures for this query (results: \(resultsCount)).")
             return [:]
         }
         
@@ -84,7 +85,7 @@ class APIService {
     // api-sports.io requires a season parameter when filtering by league.
     // The European season typically starts in August.
     // E.g., Matches in May 2025 belong to the 2024 season. Matches in Sept 2025 belong to the 2025 season.
-    private func getCurrentSeasonYear(for targetDate: Date) -> Int {
+    func getCurrentSeasonYear(for targetDate: Date) -> Int {
         let calendar = Calendar.current
         let year = calendar.component(.year, from: targetDate)
         let month = calendar.component(.month, from: targetDate)
@@ -125,6 +126,8 @@ class APIService {
             
             let fixture = Fixture(
                 apiId: item.fixture.id,
+                homeTeamId: item.teams.home.id,
+                awayTeamId: item.teams.away.id,
                 homeTeam: item.teams.home.name,
                 awayTeam: item.teams.away.name,
                 date: parseDate(item.fixture.date),
@@ -134,7 +137,8 @@ class APIService {
                 homeLogoUrl: item.teams.home.logo,
                 awayLogoUrl: item.teams.away.logo,
                 homeGoals: item.goals.home,
-                awayGoals: item.goals.away
+                awayGoals: item.goals.away,
+                round: item.league.round
             )
             
             if result[competition] != nil {
@@ -160,6 +164,19 @@ class APIService {
         let response = try JSONDecoder().decode(APIEventResponse.self, from: data)
         
         return response.response.map { MatchEvent(apiEvent: $0) }
+    }
+    
+    func fetchInjuries(fixtureId: Int) async throws -> [Injury] {
+        let urlString = "\(baseURL)/injuries?fixture=\(fixtureId)"
+        guard let url = URL(string: urlString) else { throw URLError(.badURL) }
+        
+        var request = URLRequest(url: url)
+        request.addValue(apiKey, forHTTPHeaderField: "x-apisports-key")
+        
+        let (data, _) = try await URLSession.shared.data(for: request)
+        let response = try JSONDecoder().decode(APIInjuryResponse.self, from: data)
+        
+        return response.response.map { Injury(apiInjury: $0) }
     }
     
     func fetchLineups(fixtureId: Int) async throws -> [TeamLineup] {
@@ -208,6 +225,24 @@ class APIService {
         // Flatten the mapToDomain dictionary to just a single array of Fixtures
         let dictionary = mapToDomain(response: response)
         return dictionary.values.flatMap { $0 }
+    }
+    
+    // Fetch all knockout fixtures for a specific league and season to build the bracket
+    func fetchTournamentFixtures(leagueId: Int, season: Int) async throws -> [Fixture] {
+        let urlString = "\(baseURL)/fixtures?league=\(leagueId)&season=\(season)"
+        guard let url = URL(string: urlString) else { throw URLError(.badURL) }
+        
+        var request = URLRequest(url: url)
+        request.addValue(apiKey, forHTTPHeaderField: "x-apisports-key")
+        
+        let (data, _) = try await URLSession.shared.data(for: request)
+        let response = try JSONDecoder().decode(APIFixtureResponse.self, from: data)
+        
+        let dictionary = mapToDomain(response: response)
+        let allFixtures = dictionary.values.flatMap { $0 }
+        
+        // Filter to only include knockout stage matches
+        return allFixtures.filter { $0.isKnockout }
     }
     
     func fetchStandings(leagueId: Int, season: Int) async throws -> [LeagueStandingRow] {
@@ -315,6 +350,7 @@ struct APILeague: Codable {
     let id: Int
     let name: String
     let country: String
+    let round: String?
 }
 
 struct APITeams: Codable {
@@ -558,5 +594,100 @@ struct TeamStatistics {
     var failedToScorePercentage: Double {
         guard playedTotal > 0 else { return 0 }
         return Double(failedToScoreTotal) / Double(playedTotal)
+    }
+}
+
+// MARK: - Injury Models
+
+struct APIPaging: Codable {
+    let current: Int
+    let total: Int
+}
+
+struct APIInjuryResponse: Codable {
+    let get: String
+    let parameters: [String: String]?
+    let errors: [String: String]?
+    let results: Int
+    let paging: APIPaging
+    let response: [APIInjuryItem]
+    
+    enum CodingKeys: String, CodingKey {
+        case get, parameters, errors, results, paging, response
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        get = try container.decode(String.self, forKey: .get)
+        parameters = try container.decodeIfPresent([String: String].self, forKey: .parameters)
+        results = try container.decode(Int.self, forKey: .results)
+        paging = try container.decode(APIPaging.self, forKey: .paging)
+        response = try container.decode([APIInjuryItem].self, forKey: .response)
+
+        // Handle errors field being either an empty array [] or a dictionary [String: String]
+        if let dictionary = try? container.decode([String: String].self, forKey: .errors) {
+            self.errors = dictionary
+        } else {
+            // It might be an empty array [] if there are no errors
+            self.errors = nil
+        }
+    }
+}
+
+struct APIInjuryItem: Codable {
+    let player: APIInjuryPlayer
+    let team: APIInjuryTeam
+    let fixture: APIInjuryFixture
+    let league: APIInjuryLeague
+}
+
+struct APIInjuryPlayer: Codable {
+    let id: Int
+    let name: String
+    let type: String
+    let reason: String
+    let photo: String?
+}
+
+struct APIInjuryTeam: Codable {
+    let id: Int
+    let name: String
+    let logo: String?
+}
+
+struct APIInjuryFixture: Codable {
+    let id: Int
+    let timezone: String
+    let date: String
+    let timestamp: Int
+}
+
+struct APIInjuryLeague: Codable {
+    let id: Int
+    let season: Int
+    let name: String
+    let logo: String?
+}
+
+struct Injury: Identifiable {
+    let id = UUID()
+    let playerId: Int
+    let playerName: String
+    let playerPhoto: String?
+    let type: String
+    let reason: String
+    let teamId: Int
+    let teamName: String
+    let teamLogo: String?
+    
+    init(apiInjury: APIInjuryItem) {
+        self.playerId = apiInjury.player.id
+        self.playerName = apiInjury.player.name
+        self.playerPhoto = apiInjury.player.photo
+        self.type = apiInjury.player.type
+        self.reason = apiInjury.player.reason
+        self.teamId = apiInjury.team.id
+        self.teamName = apiInjury.team.name
+        self.teamLogo = apiInjury.team.logo
     }
 }

@@ -7,11 +7,13 @@ struct ProfileView: View {
     @Binding var selectedGroup: BettingGroup?
     @Binding var isAuthenticated: Bool
     
+    @Environment(\.requestReview) var requestReview
+    
     @State private var groups: [BettingGroup] = []
     @State private var profile: Profile?
     @State private var editingUsername: String = ""
-    @State private var editingPhone: String = ""
     @State private var selectedItem: PhotosPickerItem?
+    @AppStorage("liveActivitiesEnabled") private var liveActivitiesEnabled = true
     
     @State private var isLoading = false
     @State private var isSaving = false
@@ -24,7 +26,6 @@ struct ProfileView: View {
     
     enum EditField: String, Identifiable {
         case username = "Name"
-        case phoneNumber = "Phone Number"
         var id: String { rawValue }
     }
     
@@ -81,23 +82,64 @@ struct ProfileView: View {
                     
                     ProfileRow(
                         value: profile?.username ?? "Not set",
-                        icon: "person.fill"
+                        icon: "person"
                     ) {
                         fieldToEdit = .username
                     }
-                    
-                    ProfileRow(
-                        value: profile?.phoneNumber ?? "Not set",
-                        icon: "phone.fill"
-                    ) {
-                        fieldToEdit = .phoneNumber
+                }
+                
+                Section {
+                    HStack(spacing: 12) {
+                        // Monzo M Icon
+                        Text("M")
+                            .font(.system(size: 14, weight: .bold, design: .rounded))
+                            .foregroundStyle(.white)
+                            .frame(width: 28, height: 28)
+                            .background(Color.accentColor)
+                            .clipShape(Circle())
+                        
+                        if let monzoUser = profile?.monzoUsername, !monzoUser.isEmpty {
+                            Text(monzoUser)
+                                .foregroundStyle(.primary)
+                            
+                            Spacer()
+                            
+                            Button("Remove") {
+                                updateMonzoUsername("")
+                            }
+                            .font(.subheadline)
+                            .foregroundStyle(.red)
+                        } else {
+                            let binding = Binding<String>(
+                                get: { profile?.monzoUsername ?? "" },
+                                set: { newValue in
+                                    updateMonzoUsername(newValue)
+                                }
+                            )
+                            
+                            NavigationLink(destination: AddMonzoUsernameView(monzoUsername: binding)) {
+                                Text("Add Monzo Username")
+                                    .foregroundStyle(.primary)
+                                
+                                Spacer()
+                            }
+                        }
                     }
+                    .padding(.vertical, 4)
+                } header: {
+                    Text("Payment Details")
+                } footer: {
+                    Text("Adding your Monzo username makes it easy for other members of the group to send you their stake.")
                 }
                 
                 Section("App Settings") {
+                    Toggle("Live Activities", isOn: $liveActivitiesEnabled)
+                        .tint(Color.green)
+                        .padding(.vertical, 4)
+
                     ProfileRow(
                         value: "Notifications",
-                        icon: "bell.badge.fill"
+                        icon: "bell.badge"
                     ) {
                         if let url = URL(string: UIApplication.openNotificationSettingsURLString) {
                             UIApplication.shared.open(url)
@@ -106,11 +148,9 @@ struct ProfileView: View {
                     
                     ProfileRow(
                         value: "Leave a Review",
-                        icon: "star.fill"
+                        icon: "star"
                     ) {
-                        if let scene = UIApplication.shared.connectedScenes.first(where: { $0.activationState == .foregroundActive }) as? UIWindowScene {
-                            SKStoreReviewController.requestReview(in: scene)
-                        }
+                        requestReview()
                     }
                     
                     Text("Version 1.0.0")
@@ -136,7 +176,7 @@ struct ProfileView: View {
             .sheet(item: $fieldToEdit) { field in
                 EditProfileFieldView(
                     field: field,
-                    initialValue: field == .username ? (profile?.username ?? "") : (profile?.phoneNumber ?? ""),
+                    initialValue: profile?.username ?? "",
                     onSave: { newValue in
                         updateField(field, value: newValue)
                     }
@@ -174,7 +214,6 @@ struct ProfileView: View {
                 self.groups = gs
                 self.profile = p
                 self.editingUsername = p.username
-                self.editingPhone = p.phoneNumber ?? ""
                 isLoading = false
             }
         } catch {
@@ -187,7 +226,6 @@ struct ProfileView: View {
         guard var updatedProfile = profile else { return }
         switch field {
         case .username: updatedProfile.username = value
-        case .phoneNumber: updatedProfile.phoneNumber = value
         }
         
         Task {
@@ -196,7 +234,22 @@ struct ProfileView: View {
                 await MainActor.run {
                     self.profile = updatedProfile
                     if field == .username { self.editingUsername = value }
-                    else { self.editingPhone = value }
+                }
+            } catch {
+                print("Error saving profile: \(error)")
+            }
+        }
+    }
+    
+    private func updateMonzoUsername(_ value: String) {
+        guard var updatedProfile = profile else { return }
+        updatedProfile.monzoUsername = value.isEmpty ? nil : value
+        
+        Task {
+            do {
+                try await SupabaseService.shared.updateProfile(updatedProfile)
+                await MainActor.run {
+                    self.profile = updatedProfile
                 }
             } catch {
                 print("Error saving profile: \(error)")
@@ -303,9 +356,8 @@ struct EditProfileFieldView: View {
             Form {
                 Section(header: Text(field.rawValue)) {
                     TextField(field.rawValue, text: $value)
-                        .keyboardType(field == .phoneNumber ? .phonePad : .default)
                         .autocorrectionDisabled()
-                        .textInputAutocapitalization(field == .username ? .words : .none)
+                        .textInputAutocapitalization(.words)
                 }
             }
             .navigationTitle("Edit \(field.rawValue)")
@@ -313,6 +365,7 @@ struct EditProfileFieldView: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
+                        .foregroundStyle(.primary)
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done") {
@@ -331,7 +384,7 @@ struct EditProfileFieldView: View {
 }
 
 #if canImport(UIKit)
-extension UIImage: Transferable {
+extension UIImage: @retroactive Transferable {
     public static var transferRepresentation: some TransferRepresentation {
         DataRepresentation(exportedContentType: .jpeg) { image in
             image.jpegData(compressionQuality: 0.8) ?? Data()

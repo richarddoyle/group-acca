@@ -20,39 +20,32 @@ struct CreateGroupView: View {
         NavigationStack {
             Form {
                 Section {
-                    HStack {
-                        Spacer()
-                        PhotosPicker(selection: $selectedItem, matching: .images) {
-                            if let imageData = selectedImageData, let uiImage = UIImage(data: imageData) {
-                                Image(uiImage: uiImage)
-                                    .resizable()
-                                    .aspectRatio(contentMode: .fill)
-                                    .frame(width: 100, height: 100)
-                                    .clipShape(Circle())
+                    PhotosPicker(selection: $selectedItem, matching: .images) {
+                        HStack(spacing: 12) {
+                            Image(systemName: "camera.badge.ellipsis")
+                                .foregroundStyle(Color.accentColor)
+                                .frame(width: 24)
+                            
+                            if selectedImageData != nil {
+                                Text("Profile Picture Selected")
+                                    .foregroundStyle(.primary)
                             } else {
-                                Circle()
-                                    .fill(Color(.systemGray5))
-                                    .frame(width: 100, height: 100)
-                                    .overlay(
-                                        Image(systemName: "camera.fill")
-                                            .foregroundStyle(.secondary)
-                                            .font(.title)
-                                    )
+                                Text("Set Group Profile Picture")
+                                    .foregroundStyle(.primary)
                             }
+                            
+                            Spacer()
                         }
-                        .onChange(of: selectedItem) { _, newItem in
-                            Task {
-                                if let data = try? await newItem?.loadTransferable(type: Data.self) {
-                                    selectedImageData = data
-                                }
-                            }
-                        }
-                        Spacer()
+                        .contentShape(Rectangle())
                     }
-                    .padding(.vertical, 8)
-                }
-                
-                Section("Group Details") {
+                    .onChange(of: selectedItem) { _, newItem in
+                        Task {
+                            if let data = try? await newItem?.loadTransferable(type: Data.self) {
+                                selectedImageData = data
+                            }
+                        }
+                    }
+                    
                     TextField("Group Name", text: $groupName)
                 }
                 
@@ -63,10 +56,12 @@ struct CreateGroupView: View {
                     }
                 }
             }
-            .navigationTitle("New Betting Group")
+            .navigationTitle("")
+            .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
+                        .foregroundStyle(.primary)
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Create") {

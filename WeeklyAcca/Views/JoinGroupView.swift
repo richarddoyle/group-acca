@@ -15,8 +15,6 @@ struct JoinGroupView: View {
                     TextField("Enter 6-digit code", text: $joinCode)
                         .textInputAutocapitalization(.characters)
                         .autocorrectionDisabled()
-                } header: {
-                    Text("Join Code")
                 } footer: {
                     Text("Ask the group admin for the code found in their settings.")
                 }
@@ -28,10 +26,12 @@ struct JoinGroupView: View {
                     }
                 }
             }
-            .navigationTitle("Join Group")
+            .navigationTitle("")
+            .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
+                        .foregroundStyle(.primary)
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Join") {

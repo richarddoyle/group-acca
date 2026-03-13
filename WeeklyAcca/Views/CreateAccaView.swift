@@ -11,17 +11,33 @@ struct CreateAccaView: View {
     @State private var members: [Member] = [] // Loaded members
     @State private var stakePerPick: Double = 5.0
     @State private var maxPicksPerMember: Int = 1
+    @State private var hasInitializedDefaults: Bool = false
     
     @State private var startDate: Date = Date()
     @State private var endDate: Date = Date()
     @State private var isCreating: Bool = false
     @State private var errorMessage: String?
     @State private var showError: Bool = false
+    @State private var showLockTimeWarning: Bool = false
     
     @State private var selectedSport: String = "Football"
     let sports = ["Football"]
     
+    @State private var monzoUsername: String = ""
     @State private var selectedLeagues: Set<String> = Set(LeagueConstants.supportedLeagues.map { $0.name })
+    
+    // Currency & Stake Options
+    @State private var selectedCurrency: String = "£"
+    let currencies = ["£", "$", "€"]
+    
+    var stakeOptions: [Double] {
+        var options: [Double] = [1.0, 2.0, 2.5, 5.0, 7.5, 10.0, 15.0, 20.0, 25.0, 50.0, 100.0]
+        if !options.contains(group.stakePerPerson) {
+            options.append(group.stakePerPerson)
+            options.sort()
+        }
+        return options
+    }
     
     var availableLeagues: [String] {
         LeagueConstants.supportedLeagues.map { $0.name }
@@ -38,13 +54,19 @@ struct CreateAccaView: View {
                 }
                 
                 Section("Date Range") {
-                    DatePicker("Start Date", selection: $startDate, displayedComponents: .date)
-                    DatePicker("Pick Deadline", selection: $startDate, displayedComponents: .hourAndMinute)
+                    DatePicker("Start Date", selection: $startDate, in: Date()..., displayedComponents: .date)
+                    DatePicker("Pick Deadline", selection: $startDate, in: Date()..., displayedComponents: .hourAndMinute)
                     Text("Pick deadline on \(startDate.formatted(.dateTime.weekday(.wide).month(.abbreviated).day().year())) \(startDate.formatted(date: .omitted, time: .shortened)) (\(TimeZone.current.abbreviation() ?? ""))")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                     
                     DatePicker("End Date", selection: $endDate, in: startDate..., displayedComponents: .date)
+                }
+                .onChange(of: startDate) { oldDate, newDate in
+                    let oldTitle = oldDate.formatted(.dateTime.month(.abbreviated).day().year())
+                    if title == oldTitle || title.isEmpty {
+                        title = newDate.formatted(.dateTime.month(.abbreviated).day().year())
+                    }
                 }
                 
                 Section("Sport & Rules") {
@@ -88,16 +110,27 @@ struct CreateAccaView: View {
                             }
                         }
                     }
+                    HStack {
+                        Text("Currency")
+                        Spacer()
+                        Picker("", selection: $selectedCurrency) {
+                            ForEach(currencies, id: \.self) { currency in
+                                Text(currency).tag(currency)
+                            }
+                        }
+                        .pickerStyle(.menu)
+                    }
                     
                     HStack {
                         Text("Stake per pick")
                         Spacer()
-                        TextField("£", value: $stakePerPick, format: .currency(code: "GBP"))
-                            .keyboardType(.decimalPad)
-                            .multilineTextAlignment(.trailing)
-                            .frame(width: 80)
+                        Picker("", selection: $stakePerPick) {
+                            ForEach(stakeOptions, id: \.self) { amount in
+                                Text("\(selectedCurrency)\(String(format: "%.2f", amount))").tag(amount)
+                            }
+                        }
+                        .pickerStyle(.menu)
                     }
-                    
                     HStack {
                         Text("Max picks per member")
                         Spacer()
@@ -132,6 +165,36 @@ struct CreateAccaView: View {
                     }
                 }
                 
+                Section {
+                    NavigationLink(destination: AddMonzoUsernameView(monzoUsername: $monzoUsername)) {
+                        HStack(spacing: 12) {
+                            Text("M")
+                                .font(.system(size: 14, weight: .bold, design: .rounded))
+                                .foregroundStyle(.white)
+                                .frame(width: 28, height: 28)
+                                .background(Color.accentColor)
+                                .clipShape(Circle())
+                            
+                            Text("Monzo Username")
+                                .foregroundStyle(.primary)
+                            
+                            Spacer()
+                            
+                            if !monzoUsername.isEmpty {
+                                Text(monzoUsername)
+                                    .foregroundStyle(.secondary)
+                            } else {
+                                Text("Add")
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                } header: {
+                    Text("Payment Options")
+                } footer: {
+                    Text("Add details of your preferred payment methods so that members can send you their stake easily.")
+                }
+                
                 Section("Participants") {
                     if members.isEmpty {
                         Text("Loading members...")
@@ -150,10 +213,11 @@ struct CreateAccaView: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
+                        .foregroundStyle(.primary)
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button {
-                        createAcca()
+                        validateAndCreate()
                     } label: {
                         if isCreating {
                             ProgressView()
@@ -182,13 +246,24 @@ struct CreateAccaView: View {
             }, message: {
                 Text(errorMessage ?? "Unknown error")
             })
+            .alert("Approaching Lock Time", isPresented: $showLockTimeWarning, actions: {
+                Button("Cancel", role: .cancel) { }
+                Button("Create Anyway", role: .destructive) {
+                    createAcca()
+                }
+            }, message: {
+                Text("The pick deadline is less than an hour away (or in the past). Are you sure you want to create this Accumulator now?")
+            })
             .task {
+                guard !hasInitializedDefaults else { return }
+                
                 // Initialize defaults
                 setupDefaults()
                 
-                // Load members for this group
+                // Load members for this group safely
                 do {
                     let fetchedMembers = try await SupabaseService.shared.fetchMembers(for: group.id)
+                    
                     await MainActor.run {
                         self.members = fetchedMembers
                         for member in members {
@@ -198,6 +273,22 @@ struct CreateAccaView: View {
                 } catch {
                     print("Error loading members: \(error)")
                 }
+                
+                // Fetch Profile for default Monzo handle
+                do {
+                    let userId = SupabaseService.shared.currentUserId
+                    let fetchedProfile = try await SupabaseService.shared.fetchProfile(id: userId)
+                    
+                    await MainActor.run {
+                        if let existingMonzo = fetchedProfile.monzoUsername {
+                            self.monzoUsername = existingMonzo
+                        }
+                    }
+                } catch {
+                    print("Error loading profile: \(error)")
+                }
+                
+                hasInitializedDefaults = true
             }
         }
     }
@@ -206,35 +297,19 @@ struct CreateAccaView: View {
         let calendar = Calendar.current
         let today = Date()
         
+        // 1. Start Date / Lock Time: Current time + 2 hours
+        let newStartDate = calendar.date(byAdding: .hour, value: 2, to: today) ?? today.addingTimeInterval(2 * 3600)
+        self.startDate = newStartDate
+        
         if title.isEmpty {
-            self.title = today.formatted(.dateTime.month(.abbreviated).day().year()) // e.g., "Feb 27, 2026"
-        }
-        
-        // Target UK Timezone
-        guard let ukTimeZone = TimeZone(identifier: "Europe/London") else {
-            // Fallback if timezone identifier fails (highly unlikely)
-            startDate = today
-            endDate = calendar.date(byAdding: .day, value: 1, to: today) ?? today
-            return
-        }
-        
-        // 1. Start Date / Lock Time: Today at 14:30 (2:30 PM) UK Time
-        var components = calendar.dateComponents(in: ukTimeZone, from: today)
-        components.hour = 14
-        components.minute = 30
-        components.second = 0
-        
-        if let lockTime = components.date {
-            startDate = lockTime
-        } else {
-            startDate = today
+            self.title = newStartDate.formatted(.dateTime.month(.abbreviated).day().year())
         }
         
         // 2. End Date: Tomorrow
-        if let tomorrow = calendar.date(byAdding: .day, value: 1, to: startDate) {
-            endDate = tomorrow
+        if let tomorrow = calendar.date(byAdding: .day, value: 1, to: newStartDate) {
+            self.endDate = tomorrow
         } else {
-            endDate = startDate
+            self.endDate = newStartDate
         }
     }
     
@@ -249,6 +324,22 @@ struct CreateAccaView: View {
                 }
             }
         )
+    }
+    
+    private func validateAndCreate() {
+        if startDate < Date() {
+            errorMessage = "The pick deadline cannot be in the past."
+            showError = true
+            return
+        }
+        
+        let oneHourFromNow = Date().addingTimeInterval(3600)
+        
+        if startDate < oneHourFromNow {
+            showLockTimeWarning = true
+        } else {
+            createAcca()
+        }
     }
     
     private func createAcca() {
@@ -271,11 +362,23 @@ struct CreateAccaView: View {
                     stakePerPick: stakePerPick,
                     maxPicksPerMember: maxPicksPerMember,
                     isSettled: false,
-                    status: .pending
+                    status: .pending,
+                    monzoUsername: monzoUsername.isEmpty ? nil : monzoUsername,
+                    creatorId: SupabaseService.shared.currentUserId
                 )
                 
                 // 3. Save Week to Supabase
                 try await SupabaseService.shared.createWeek(week: newWeek)
+                
+                // 3b. Update Profile with the new Monzo Username
+                if !monzoUsername.isEmpty {
+                    let userId = SupabaseService.shared.currentUserId
+                    var profile = try await SupabaseService.shared.fetchProfile(id: userId)
+                    if profile.monzoUsername != monzoUsername {
+                        profile.monzoUsername = monzoUsername
+                        try await SupabaseService.shared.updateProfile(profile)
+                    }
+                }
                 
                 // 4. Create initial pending selections for selected members
                 // Note: In Supabase, we might not want to pre-fill selections rows for everyone immediately
@@ -298,6 +401,13 @@ struct CreateAccaView: View {
                         odds: 0.0
                     )
                     try await SupabaseService.shared.saveSelection(placeholder)
+                }
+                
+                // Trigger Push Notifications via Edge Function
+                do {
+                    try await SupabaseService.shared.sendAccaNotification(for: newWeek)
+                } catch {
+                    print("Error sending Acca push notification: \(error)")
                 }
                 
                 await MainActor.run {

@@ -49,7 +49,7 @@ struct MatchesView: View {
                 .padding(.horizontal, 20)
                 .padding(.top, 16)
                 .padding(.bottom, 8)
-                .background(Color(.systemGroupedBackground))
+                .background(Color(.systemBackground))
                 
                 // Date Tabs
                 ScrollView(.horizontal, showsIndicators: false) {
@@ -66,7 +66,7 @@ struct MatchesView: View {
                     .padding(.horizontal)
                     .padding(.vertical, 12)
                 }
-                .background(Color(.systemGroupedBackground))
+                .background(Color(.systemBackground))
                 
                 Divider()
                 
@@ -231,14 +231,40 @@ struct MatchRowView: View {
     var awayPosition: Int? = nil
     var showPositions: Bool = false
     
+    var isLoadingStats: Bool = false
+    
+    var takenByMember: String? = nil
+    var takenByAvatarUrl: String? = nil
+    var takenByBadgeEmoji: String? = nil
+    
     var body: some View {
         VStack(spacing: 8) {
-            // Kickoff time or status
+            // Kickoff time or status + Taken Indicator
             HStack {
                 Text(fixture.status == "NS" ? fixture.date.formatted(date: .omitted, time: .shortened) : fixture.status)
                     .font(.caption.bold())
                     .foregroundStyle(.secondary)
                 Spacer()
+                
+                if takenByMember != nil {
+                    HStack(spacing: 4) {
+                        ProfileImage(url: takenByAvatarUrl, size: 16)
+                            .shadow(color: .black.opacity(0.05), radius: 1, y: 0.5)
+                        
+                        if let emoji = takenByBadgeEmoji {
+                            Text(emoji)
+                                .font(.caption)
+                        }
+                        
+                        Text("Taken")
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundStyle(.black)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(Color.yellow)
+                            .clipShape(Capsule())
+                    }
+                }
             }
             
             // Teams and Score Layer
@@ -318,10 +344,20 @@ struct MatchRowView: View {
                 
                 // Bottom Row: Pills horizontally aligned
                 if showForm || showCleanSheets || showBtts || showPositions {
-                    HStack(spacing: 8) {
-                        // Home Pill (right aligned to text = padding for badge)
+                    if isLoadingStats {
+                        HStack {
+                            Spacer()
+                            ProgressView()
+                                .controlSize(.small)
+                                .padding(.vertical, 4)
+                            Spacer()
+                        }
+                        .frame(minHeight: 24)
+                    } else {
                         HStack(spacing: 8) {
-                            Spacer(minLength: 0)
+                            // Home Pill (right aligned to text = padding for badge)
+                            HStack(spacing: 8) {
+                                Spacer(minLength: 0)
                             if showForm {
                                 formCircles(for: homeForm)
                             } else if showCleanSheets {
@@ -372,6 +408,7 @@ struct MatchRowView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                     }
                 }
+            }
             }
             .padding(.vertical, 4)
         }

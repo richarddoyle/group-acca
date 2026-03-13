@@ -66,7 +66,7 @@ class SupabaseService {
             let id: UUID
         }
         
-        let existingProfile: [ProfileCheck] = try await client.database
+        let existingProfile: [ProfileCheck] = try await client
             .from("profiles")
             .select("id")
             .eq("id", value: user.id)
@@ -83,7 +83,7 @@ class SupabaseService {
                 createdAt: Date()
             )
             
-            try await client.database
+            try await client
                 .from("profiles")
                 .insert(newProfile)
                 .execute()
@@ -108,7 +108,7 @@ class SupabaseService {
     // MARK: - Profile Management
     
     func fetchProfile(id: UUID) async throws -> Profile {
-        let profile: Profile = try await client.database
+        let profile: Profile = try await client
             .from("profiles")
             .select()
             .eq("id", value: id)
@@ -120,26 +120,40 @@ class SupabaseService {
     
     func fetchProfiles(ids: [UUID]) async throws -> [Profile] {
         if ids.isEmpty { return [] }
-        let profiles: [Profile] = try await client.database
+        let profiles: [Profile] = try await client
             .from("profiles")
             .select()
-            .in("id", value: ids)
+            .in("id", values: ids)
             .execute()
             .value
         return profiles
     }
     
     func updateProfile(_ profile: Profile) async throws {
-        try await client.database
+        var updateDict: [String: AnyJSON] = [
+            "username": .string(profile.username),
+            "avatar_url": profile.avatarUrl != nil ? .string(profile.avatarUrl!) : .null,
+            "apns_token": profile.apnsToken != nil ? .string(profile.apnsToken!) : .null,
+            "monzo_username": profile.monzoUsername != nil ? .string(profile.monzoUsername!) : .null
+        ]
+        
+        try await client
             .from("profiles")
-            .update(profile)
+            .update(updateDict)
             .eq("id", value: profile.id)
+            .execute()
+            
+        // Sync name across members table
+        try await client
+            .from("members")
+            .update(["name": profile.username])
+            .eq("user_id", value: profile.id)
             .execute()
     }
     
     func updateAPNSToken(token: String) async throws {
         let userId = currentUserId
-        try await client.database
+        try await client
             .from("profiles")
             .update(["apns_token": token])
             .eq("id", value: userId)
@@ -153,8 +167,8 @@ class SupabaseService {
         try await client.storage
             .from("avatars")
             .upload(
-                path: filePath,
-                file: imageData,
+                filePath,
+                data: imageData,
                 options: FileOptions(contentType: "image/jpeg")
             )
         
@@ -183,7 +197,7 @@ class SupabaseService {
         )
         
         // 1. Insert the group
-        try await client.database
+        try await client
             .from("betting_groups")
             .insert(group)
             .execute()
@@ -192,7 +206,7 @@ class SupabaseService {
         let profile = try await fetchProfile(id: currentId)
         
         // 3. Insert the creator as an admin member
-        var member = Member(
+        let member = Member(
             id: UUID(),
             groupId: group.id,
             name: profile.username,
@@ -201,7 +215,7 @@ class SupabaseService {
             userId: currentId
         )
         
-        try await client.database
+        try await client
             .from("members")
             .insert(member)
             .execute()
@@ -213,7 +227,7 @@ class SupabaseService {
     // Note: This requires complex joining or two queries. Simplified for now to just fetch all groups user is in.
     func fetchGroups(for userId: UUID) async throws -> [BettingGroup] {
         // 1. Get member records for this user
-        let members: [Member] = try await client.database
+        let members: [Member] = try await client
             .from("members")
             .select()
             .eq("user_id", value: userId)
@@ -225,10 +239,10 @@ class SupabaseService {
         if groupIds.isEmpty { return [] }
         
         // 2. Fetch groups
-        let groups: [BettingGroup] = try await client.database
+        let groups: [BettingGroup] = try await client
             .from("betting_groups")
             .select()
-            .in("id", value: groupIds)
+            .in("id", values: groupIds)
             .execute()
             .value
             
@@ -237,7 +251,7 @@ class SupabaseService {
     
     // Fetch members of a group
     func fetchMembers(for groupId: UUID) async throws -> [Member] {
-        let members: [Member] = try await client.database
+        let members: [Member] = try await client
             .from("members")
             .select()
             .eq("group_id", value: groupId)
@@ -247,7 +261,7 @@ class SupabaseService {
     }
     
     func fetchMyMemberships(userId: UUID) async throws -> [Member] {
-        let members: [Member] = try await client.database
+        let members: [Member] = try await client
             .from("members")
             .select()
             .eq("user_id", value: userId)
@@ -258,10 +272,10 @@ class SupabaseService {
     
     func fetchMySelections(memberIds: [UUID]) async throws -> [Selection] {
         if memberIds.isEmpty { return [] }
-        let selections: [Selection] = try await client.database
+        let selections: [Selection] = try await client
             .from("selections")
             .select()
-            .in("member_id", value: memberIds)
+            .in("member_id", values: memberIds)
             .execute()
             .value
         return selections
@@ -273,10 +287,10 @@ class SupabaseService {
         let groupIds = memberships.map { $0.groupId }
         if groupIds.isEmpty { return [] }
         
-        let weeks: [Week] = try await client.database
+        let weeks: [Week] = try await client
             .from("accas")
             .select()
-            .in("group_id", value: groupIds)
+            .in("group_id", values: groupIds)
             .execute()
             .value
         return weeks
@@ -285,7 +299,7 @@ class SupabaseService {
     // Join a group by code
     func joinGroup(code: String, userName: String, userId: UUID) async throws -> BettingGroup {
         // 1. Find group
-        let groups: [BettingGroup] = try await client.database
+        let groups: [BettingGroup] = try await client
             .from("betting_groups")
             .select()
             .eq("join_code", value: code.uppercased())
@@ -297,7 +311,7 @@ class SupabaseService {
         }
         
         // 2. Create member
-        var member = Member(
+        let member = Member(
             id: UUID(),
             groupId: group.id,
             name: userName,
@@ -306,7 +320,7 @@ class SupabaseService {
             userId: userId
         )
         
-        try await client.database
+        try await client
             .from("members")
             .insert(member)
             .execute()
@@ -316,7 +330,7 @@ class SupabaseService {
     
     // Fetch Weeks (Accas) for a group
     func fetchWeeks(groupId: UUID) async throws -> [Week] {
-        let weeks: [Week] = try await client.database
+        let weeks: [Week] = try await client
             .from("accas") // Table is 'accas' but model is 'Week' (mapped in CodingKeys?)
             .select() // Add relationships: *, selections:selections(*) ?
             .eq("group_id", value: groupId)
@@ -328,7 +342,7 @@ class SupabaseService {
     
     // Create a new Week
     func createWeek(week: Week) async throws {
-        try await client.database
+        try await client
             .from("accas")
             .insert(week)
             .execute()
@@ -336,7 +350,7 @@ class SupabaseService {
     
     // Fetch Selections for a week
     func fetchSelections(weekId: UUID) async throws -> [Selection] {
-         let selections: [Selection] = try await client.database
+         let selections: [Selection] = try await client
             .from("selections")
             .select()
             .eq("acca_id", value: weekId)
@@ -347,7 +361,7 @@ class SupabaseService {
     
     // Submit/Update Selection
     func saveSelection(_ selection: Selection) async throws {
-        try await client.database
+        try await client
             .from("selections")
             .upsert(selection)
             .execute()
@@ -355,7 +369,7 @@ class SupabaseService {
     
     // Update a betting group (name/avatar)
     func updateGroup(_ group: BettingGroup) async throws {
-        try await client.database
+        try await client
             .from("betting_groups")
             .update(group)
             .eq("id", value: group.id)
@@ -364,7 +378,7 @@ class SupabaseService {
     
     // Leave a betting group
     func leaveGroup(groupId: UUID, userId: UUID) async throws {
-        try await client.database
+        try await client
             .from("members")
             .delete()
             .eq("group_id", value: groupId)
@@ -374,7 +388,7 @@ class SupabaseService {
     
     // Delete a betting group
     func deleteGroup(id: UUID) async throws {
-        try await client.database
+        try await client
             .from("betting_groups")
             .delete()
             .eq("id", value: id)
@@ -383,7 +397,7 @@ class SupabaseService {
     
     // Delete an Acca (Week)
     func deleteAcca(id: UUID) async throws {
-        try await client.database
+        try await client
             .from("accas")
             .delete()
             .eq("id", value: id)
@@ -392,10 +406,40 @@ class SupabaseService {
     
     // Update an Acca (Week)
     func updateAcca(_ week: Week) async throws {
-        try await client.database
+        try await client
             .from("accas")
             .update(week)
             .eq("id", value: week.id)
             .execute()
+    }
+    
+    // Trigger Acca Creation Notification
+    func sendAccaNotification(for week: Week) async throws {
+        struct NotificationRecord: Encodable {
+            let id: UUID
+            let group_id: UUID
+            let start_date: String
+            let title: String
+        }
+        
+        struct NotificationPayload: Encodable {
+            let record: NotificationRecord
+        }
+        
+        let formatter = ISO8601DateFormatter()
+        let record = NotificationRecord(
+            id: week.id,
+            group_id: week.groupId,
+            start_date: formatter.string(from: week.startDate),
+            title: week.title
+        )
+        
+        let payload = NotificationPayload(record: record)
+        try await client.functions.invoke(
+            "send-acca-notification",
+            options: FunctionInvokeOptions(
+                body: payload
+            )
+        )
     }
 }

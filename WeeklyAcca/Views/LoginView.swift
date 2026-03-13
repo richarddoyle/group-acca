@@ -12,26 +12,67 @@ struct LoginView: View {
         VStack(spacing: 20) {
             Spacer()
             
-            // Custom GA Logo
-            Image("GroupAccaLogo")
-                .resizable()
-                .scaledToFit()
-                .frame(height: 240)
-                .padding(.bottom, 20)
-            
-            VStack {
-                Text("Bet Together")
-                Text("Win Together")
+            VStack(spacing: 40) {
+                // Stacked Logo and Tagline
+                VStack(spacing: 0) {
+                    Image("GroupAccaLogo")
+                        .resizable()
+                        .scaledToFit()
+                        .frame(maxWidth: .infinity)
+                        .padding(.horizontal, 20)
+                        .padding(.bottom, -15)
+                    
+                    VStack(alignment: .center, spacing: 4) {
+                        Text("Bet Together,")
+                        Text("Win Together.")
+                    }
+                    .font(.largeTitle)
+                    .bold()
+                }
+                
+                // Features Columns
+                HStack(alignment: .top, spacing: 16) {
+                    VStack(spacing: 12) {
+                        Image(systemName: "person.3")
+                            .font(.title2)
+                            .foregroundStyle(Color.accentColor)
+                            .frame(height: 30)
+                        
+                        Text("Create group accumulators")
+                            .font(.footnote)
+                            .multilineTextAlignment(.center)
+                            .foregroundStyle(.secondary)
+                    }
+                    .frame(maxWidth: .infinity)
+                    
+                    VStack(spacing: 12) {
+                        Image(systemName: "chart.bar.xaxis")
+                            .font(.title2)
+                            .foregroundStyle(Color.accentColor)
+                            .frame(height: 30)
+                        
+                        Text("Track results live")
+                            .font(.footnote)
+                            .multilineTextAlignment(.center)
+                            .foregroundStyle(.secondary)
+                    }
+                    .frame(maxWidth: .infinity)
+                    
+                    VStack(spacing: 12) {
+                        Image(systemName: "trophy")
+                            .font(.title2)
+                            .foregroundStyle(Color.accentColor)
+                            .frame(height: 30)
+                        
+                        Text("Compete with your friends")
+                            .font(.footnote)
+                            .multilineTextAlignment(.center)
+                            .foregroundStyle(.secondary)
+                    }
+                    .frame(maxWidth: .infinity)
+                }
+                .padding(.horizontal, 20)
             }
-            .font(.title)
-            .bold()
-            .multilineTextAlignment(.center)
-            
-            Text("Create group accumulators, track selections, see live outcomes")
-                .font(.body)
-                .multilineTextAlignment(.center)
-                .foregroundStyle(.secondary)
-                .padding(.horizontal, 30)
             
             Spacer()
             

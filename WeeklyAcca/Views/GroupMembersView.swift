@@ -1,10 +1,12 @@
 import SwiftUI
 
 struct GroupMembersView: View {
+    @EnvironmentObject var badgeManager: GroupBadgeManager
     let group: BettingGroup
     @State private var members: [Member] = []
     @State private var profiles: [UUID: Profile] = [:]
     @State private var isLoading = false
+    @State private var selectedMember: Member?
     
     var body: some View {
         List {
@@ -16,29 +18,34 @@ struct GroupMembersView: View {
                         .foregroundStyle(.secondary)
                 } else {
                     ForEach(members) { member in
-                        HStack(spacing: 12) {
-                            ProfileImage(url: profiles[member.userId ?? UUID()]?.avatarUrl, size: 40)
-                            
-                            VStack(alignment: .leading, spacing: 2) {
-                                HStack {
-                                    Text(member.name)
-                                        .font(.headline)
-                                    if member.userId == group.adminId {
-                                        Text("Admin")
-                                            .font(.caption2.bold())
-                                            .padding(.horizontal, 6)
-                                            .padding(.vertical, 2)
-                                            .background(Color.accentColor.opacity(0.1))
-                                            .foregroundStyle(Color.accentColor)
-                                            .clipShape(Capsule())
+                        Button {
+                            selectedMember = member
+                        } label: {
+                            HStack(spacing: 12) {
+                                ProfileImage(url: profiles[member.userId ?? UUID()]?.avatarUrl, size: 40)
+                                
+                                VStack(alignment: .leading, spacing: 2) {
+                                    HStack {
+                                        Text("\(member.name)\(badgeManager.emoji(for: member.id, context: .general).map { " \($0)" } ?? "")")
+                                            .font(.headline)
+                                        if member.userId == group.adminId {
+                                            Text("Admin")
+                                                .font(.caption2.bold())
+                                                .padding(.horizontal, 6)
+                                                .padding(.vertical, 2)
+                                                .background(Color.accentColor.opacity(0.1))
+                                                .foregroundStyle(Color.accentColor)
+                                                .clipShape(Capsule())
+                                        }
                                     }
+                                    Text("Joined \(member.joinedAt.formatted(date: .abbreviated, time: .omitted))")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
                                 }
-                                Text("Joined \(member.joinedAt.formatted(date: .abbreviated, time: .omitted))")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
                             }
+                            .padding(.vertical, 4)
                         }
-                        .padding(.vertical, 4)
+                        .buttonStyle(.plain)
                     }
                 }
             }
@@ -49,6 +56,13 @@ struct GroupMembersView: View {
         }
         .task {
             await loadMembers()
+        }
+        .sheet(item: $selectedMember) { member in
+            MemberProfileView(
+                member: member,
+                group: group,
+                avatarUrl: profiles[member.userId ?? UUID()]?.avatarUrl
+            )
         }
     }
     

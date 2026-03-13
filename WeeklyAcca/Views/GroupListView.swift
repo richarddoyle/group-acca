@@ -91,7 +91,6 @@ struct GroupListView: View {
                             }
                             .buttonStyle(.plain)
                         }
-                        .onDelete(perform: deleteGroups)
                     }
                 } header: {
                     Text("Your Groups")
@@ -122,7 +121,7 @@ struct GroupListView: View {
                 Task {
                     do {
                         let userId = SupabaseService.shared.currentUserId
-                        let profile = try await SupabaseService.shared.fetchProfile(id: userId)
+                        _ = try await SupabaseService.shared.fetchProfile(id: userId)
                         
                         var avatarUrl: String? = nil
                         if let data = imageData {
@@ -205,24 +204,6 @@ struct GroupListView: View {
         } catch {
             print("Error loading groups: \(error)")
             isLoading = false
-        }
-    }
-    
-    private func deleteGroups(at offsets: IndexSet) {
-        let groupsToRemove = offsets.map { groupStates[$0].group }
-        
-        // Optimistically update UI
-        groupStates.remove(atOffsets: offsets)
-        
-        Task {
-            for group in groupsToRemove {
-                do {
-                    try await SupabaseService.shared.deleteGroup(id: group.id)
-                } catch {
-                    print("Error deleting group: \(error)")
-                    // Optionally: rollback UI or show error
-                }
-            }
         }
     }
 }

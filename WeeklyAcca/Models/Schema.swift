@@ -8,17 +8,17 @@ struct Profile: Codable, Identifiable {
     let id: UUID
     var username: String
     var avatarUrl: String?
-    var phoneNumber: String?
     let createdAt: Date
     var apnsToken: String?
+    var monzoUsername: String?
     
     enum CodingKeys: String, CodingKey {
         case id
         case username
         case avatarUrl = "avatar_url"
-        case phoneNumber = "phone_number"
         case createdAt = "created_at"
         case apnsToken = "apns_token"
+        case monzoUsername = "monzo_username"
     }
 }
 
@@ -89,6 +89,8 @@ struct Week: Codable, Identifiable {
     var maxPicksPerMember: Int?
     let isSettled: Bool
     var status: WeekStatus
+    var monzoUsername: String?
+    let creatorId: UUID?
     
     enum CodingKeys: String, CodingKey {
         case id
@@ -103,6 +105,8 @@ struct Week: Codable, Identifiable {
         case maxPicksPerMember = "max_picks_per_member"
         case isSettled = "is_settled"
         case status
+        case monzoUsername = "monzo_username"
+        case creatorId = "creator_id"
     }
 }
 

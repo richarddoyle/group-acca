@@ -1,9 +1,18 @@
 import SwiftUI
 
+struct ActiveAward: Identifiable, Hashable {
+    let id = UUID()
+    let emoji: String
+    let groupName: String
+    let description: String
+}
+
 struct StatsView: View {
     @State private var weeks: [Week] = []
     @State private var memberships: [Member] = []
     @State private var selections: [Selection] = []
+    @State private var activeAwards: [ActiveAward] = []
+    @State private var groups: [BettingGroup] = []
     @State private var currentUserProfile: Profile?
     @State private var isLoading = true
     
@@ -44,7 +53,14 @@ struct StatsView: View {
     private var sortedSettledSelections: [Selection] {
         selections
             .filter { $0.outcome != .pending }
-            .sorted { ($0.kickoffTime ?? Date.distantPast) > ($1.kickoffTime ?? Date.distantPast) }
+            .sorted { a, b in
+                let dateA = a.kickoffTime ?? Date.distantPast
+                let dateB = b.kickoffTime ?? Date.distantPast
+                if dateA == dateB {
+                    return a.id.uuidString > b.id.uuidString
+                }
+                return dateA > dateB
+            }
     }
     
     private var currentStreak: Int {
@@ -85,12 +101,48 @@ struct StatsView: View {
                     StatRow(label: "Successful Acca %", value: successfulAccaRate.formatted(.percent.precision(.fractionLength(1))))
                 }
                 
+                Section("Active Awards") {
+                    if activeAwards.isEmpty {
+                        Text("No active awards. Make some winning picks to earn some!")
+                            .foregroundStyle(.secondary)
+                            .font(.subheadline)
+                    } else {
+                        let groupedAwards = Dictionary(grouping: activeAwards, by: { $0.groupName })
+                        let sortedGroups = groupedAwards.keys.sorted()
+                        
+                        ForEach(sortedGroups, id: \.self) { groupName in
+                            VStack(alignment: .leading, spacing: 6) {
+                                Text(groupName)
+                                    .font(.headline)
+                                
+                                if let awardsInGroup = groupedAwards[groupName] {
+                                    ForEach(awardsInGroup) { award in
+                                        HStack(spacing: 8) {
+                                            Text(award.emoji)
+                                                .font(.system(size: 24))
+                                            
+                                            Text(award.description)
+                                                .font(.caption)
+                                                .foregroundStyle(.secondary)
+                                            
+                                            Spacer()
+                                        }
+                                        .padding(.vertical, 0)
+                                    }
+                                }
+                            }
+                            .padding(.vertical, 2)
+                        }
+                    }
+                }
+                
                 Section("Current Form") {
                     StatRow(label: "Current Win Streak", value: "\(currentStreak)")
                     
                     if !last10Picks.isEmpty {
                         ForEach(last10Picks) { pick in
-                            SelectionRow(selection: pick, memberName: nil, avatarUrl: nil, isLocked: true, showMatchStatus: false)
+                            let groupName = groupName(for: pick)
+                            SelectionRow(selection: pick, memberName: groupName, avatarUrl: nil, isLocked: true, showMatchStatus: false, hideBadge: true)
                         }
                     } else {
                         Text("No completed picks yet.")
@@ -124,25 +176,66 @@ struct StatsView: View {
             async let fetchedMemberships = SupabaseService.shared.fetchMyMemberships(userId: userId)
             async let fetchedWeeks = SupabaseService.shared.fetchAllMyWeeks(userId: userId)
             async let fetchedProfile = SupabaseService.shared.fetchProfile(id: userId)
+            async let fetchedGroups = SupabaseService.shared.fetchGroups(for: userId)
             
             let m = try await fetchedMemberships
             let w = try await fetchedWeeks
             let p = try? await fetchedProfile
+            let g = try await fetchedGroups
             
             let memberIds = m.map { $0.id }
             let s = try await SupabaseService.shared.fetchMySelections(memberIds: memberIds)
+            
+            var newAwards: [ActiveAward] = []
+            for group in g {
+                guard let myMemberId = m.first(where: { $0.groupId == group.id })?.id else { continue }
+                
+                let badgeManager = GroupBadgeManager()
+                await badgeManager.loadBadges(for: group)
+                
+                let topWinners = await badgeManager.topWinners
+                let topEarners = await badgeManager.topEarners
+                let streakBadges = await badgeManager.streakBadges
+                
+                if topWinners.contains(myMemberId) {
+                    newAwards.append(ActiveAward(emoji: "👑", groupName: group.name, description: "Most successful picks in the group."))
+                }
+                
+                if topEarners.contains(myMemberId) {
+                    newAwards.append(ActiveAward(emoji: "💰", groupName: group.name, description: "Highest total winnings in the group."))
+                }
+                
+                if let streakBadge = streakBadges[myMemberId] {
+                    let desc: String
+                    if streakBadge == "🐐" { desc = "On a 10+ win streak." }
+                    else if streakBadge == "🚀" { desc = "On a 5+ win streak." }
+                    else if streakBadge == "🔥" { desc = "On a 3+ win streak." }
+                    else { desc = "On a win streak." }
+                    
+                    newAwards.append(ActiveAward(emoji: streakBadge, groupName: group.name, description: desc))
+                }
+            }
             
             await MainActor.run {
                 self.memberships = m
                 self.weeks = w
                 self.selections = s
+                self.activeAwards = newAwards
                 self.currentUserProfile = p
+                self.groups = g
                 self.isLoading = false
             }
         } catch {
             print("Error loading stats: \(error)")
             await MainActor.run { isLoading = false }
         }
+    }
+    
+    // Helper to find the group name for a given selection
+    private func groupName(for selection: Selection) -> String? {
+        guard let week = weeks.first(where: { $0.id == selection.accaId }) else { return nil }
+        guard let group = groups.first(where: { $0.id == week.groupId }) else { return nil }
+        return group.name
     }
 }
 
@@ -156,8 +249,7 @@ struct StatRow: View {
                 .foregroundStyle(.primary)
             Spacer()
             Text(value)
-                .foregroundStyle(.secondary)
-                .bold()
+                .foregroundStyle(.primary)
         }
     }
 }

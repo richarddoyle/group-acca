@@ -12,12 +12,15 @@ struct MarketSelectionView: View {
     @State private var selectedTopTab: TopTab
     @State private var matchEvents: [MatchEvent] = []
     @State private var lineups: [TeamLineup] = []
+    @State private var injuries: [Injury] = []
     @State private var standings: [LeagueStandingRow] = []
     @State private var homeStats: TeamStatistics?
     @State private var awayStats: TeamStatistics?
     
     @State private var homeBttsPercentage: Double?
     @State private var awayBttsPercentage: Double?
+    
+    @State private var knockoutFixtures: [Fixture] = []
     
     @State private var recentHomeFixtures: [Fixture] = []
     @State private var recentAwayFixtures: [Fixture] = []
@@ -38,12 +41,17 @@ struct MarketSelectionView: View {
             availableTabs.append(.details)
         }
         
-        availableTabs.append(.table)
+        if fixture.isKnockout {
+            availableTabs.append(.bracket)
+        } else {
+            availableTabs.append(.table)
+        }
         
         if !isFutureMatch {
             availableTabs.append(.lineups)
         }
         
+        availableTabs.append(.injuries)
         availableTabs.append(.stats)
         
         return availableTabs
@@ -53,7 +61,9 @@ struct MarketSelectionView: View {
         case picks = "Picks"
         case details = "Game Details"
         case table = "Table"
+        case bracket = "Knockout Bracket"
         case lineups = "Lineup"
+        case injuries = "Injuries"
         case stats = "Stats"
     }
     
@@ -69,7 +79,7 @@ struct MarketSelectionView: View {
         } else if !isFutureMatch {
             defaultTab = .details
         } else {
-            defaultTab = .stats
+            defaultTab = fixture.isKnockout ? .bracket : .table
         }
         
         _selectedTopTab = State(initialValue: defaultTab)
@@ -96,7 +106,7 @@ struct MarketSelectionView: View {
                         .overlay(
                             GeometryReader { geo in
                                 Color.clear
-                                    .onChange(of: geo.frame(in: .global).minY) { newMinY in
+                                    .onChange(of: geo.frame(in: .global).minY) { _, newMinY in
                                         // The initial position of the view when not scrolled is the baseline
                                         // We want to track how far UP (negative) it has scrolled from its baseline
                                         // But we need the initial Y position to act as 0. 
@@ -107,7 +117,7 @@ struct MarketSelectionView: View {
                         .background(
                             GeometryReader { geo in
                                 Color.clear
-                                    .onChange(of: geo.frame(in: .named("scroll")).minY) { newValue in
+                                    .onChange(of: geo.frame(in: .named("scroll")).minY) { _, newValue in
                                         self.scrollOffset = newValue
                                     }
                                     .onAppear {
@@ -127,7 +137,9 @@ struct MarketSelectionView: View {
                                 case .picks: allMarketsContent
                                 case .details: gameDetailsTab
                                 case .table: tableTab
+                                case .bracket: bracketTab
                                 case .lineups: lineupTab
+                                case .injuries: injuriesTab
                                 case .stats: pickStatsTab
                                 }
                             }
@@ -360,85 +372,107 @@ struct MarketSelectionView: View {
                 .foregroundStyle(.secondary)
                 .padding()
         } else {
-            VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .center, spacing: 0) {
                 // Reverse chronological order for timeline format
                 ForEach(matchEvents.reversed()) { event in
                     let isHome = event.teamName == fixture.homeTeam
                     
-                    HStack(spacing: 16) {
-                        // Time Column
-                        VStack(alignment: .trailing, spacing: 0) {
-                            HStack(alignment: .top, spacing: 2) {
-                                Text("\(event.elapsed)'")
-                                    .font(.subheadline.bold())
-                                    .foregroundStyle(.primary)
-                                if let extra = event.extra {
-                                    Text("+\(extra)'")
-                                        .font(.system(size: 10, weight: .bold))
-                                        .foregroundStyle(.secondary)
-                                }
-                            }
-                        }
-                        .frame(width: 45, alignment: .trailing)
-                        
-                        // Icon Column
-                        VStack(alignment: .center, spacing: event.type == "subst" ? 4 : 0) {
-                            if event.type == "subst" {
-                                Image(systemName: "arrow.right.circle.fill")
-                                    .font(.system(size: 14))
-                                    .foregroundStyle(.green)
-                                Image(systemName: "arrow.left.circle.fill")
-                                    .font(.system(size: 14))
-                                    .foregroundStyle(.red)
-                            } else {
-                                eventIcon(for: event)
-                            }
-                        }
-                        .frame(width: 24)
-                        
-                        // Details Column
-                        VStack(alignment: .leading, spacing: event.type == "subst" ? 6 : 2) {
-                            if event.type == "subst" {
-                                Text(event.assistName ?? "Unknown")
-                                    .font(.subheadline)
-                                    .foregroundStyle(Color.green)
-                                Text(event.playerName)
-                                    .font(.caption)
-                                    .foregroundStyle(Color.red)
-                            } else {
-                                Text(event.playerName)
-                                    .font(.subheadline.bold())
-                                    .foregroundStyle(.primary)
-                                
-                                if let assist = event.assistName {
-                                    Text("Assist: \(assist)")
-                                        .font(.caption)
-                                        .foregroundStyle(Color(.systemGray))
-                                } else if event.type == "Goal" {
-                                    Text(event.detail)
-                                        .font(.caption)
-                                        .foregroundStyle(Color(.systemGray))
-                                }
-                            }
+                    HStack(spacing: 8) {
+                        // Left side (Home)
+                        if isHome {
+                            eventDetailsView(for: event, isHome: true)
+                            eventIconWrapper(for: event)
+                        } else {
+                            Spacer()
                         }
                         
-                        Spacer()
+                        // Center (Time)
+                        HStack(alignment: .top, spacing: 1) {
+                            Text("\(event.elapsed)'")
+                                .font(.caption2.bold())
+                                .foregroundStyle(.primary)
+                            if let extra = event.extra {
+                                Text("+\(extra)'")
+                                    .font(.system(size: 8, weight: .bold))
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        .frame(width: 32, alignment: .center)
                         
-                        // Team Alignment marker
-                        Text(event.teamName)
-                            .font(.system(size: 11))
-                            .foregroundStyle(Color(.systemGray3))
-                            .lineLimit(1)
-                            .frame(maxWidth: 80, alignment: .trailing)
+                        // Right side (Away)
+                        if !isHome {
+                            eventIconWrapper(for: event)
+                            eventDetailsView(for: event, isHome: false)
+                        } else {
+                            Spacer()
+                        }
                     }
-                    .padding(.vertical, 16)
-                    .padding(.horizontal, 16)
-                    .background(Color.white, in: RoundedRectangle(cornerRadius: 12))
-                    .shadow(color: .black.opacity(0.04), radius: 6, y: 3)
+                    .padding(.vertical, 10)
+                    .padding(.horizontal, 12)
+                    
+                    if event.id != matchEvents.reversed().last?.id {
+                        Divider()
+                            .padding(.horizontal, 12)
+                    }
                 }
             }
+            .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 12))
+            .shadow(color: .black.opacity(0.04), radius: 6, y: 3)
             .padding(.horizontal)
         }
+    }
+    
+    @ViewBuilder
+    private func eventIconWrapper(for event: MatchEvent) -> some View {
+        VStack(alignment: .center, spacing: event.type == "subst" ? 2 : 0) {
+            if event.type == "subst" {
+                Image(systemName: "arrow.right.circle.fill")
+                    .font(.system(size: 10))
+                    .foregroundStyle(.green)
+                Image(systemName: "arrow.left.circle.fill")
+                    .font(.system(size: 10))
+                    .foregroundStyle(.red)
+            } else {
+                eventIcon(for: event)
+                    .font(.system(size: 12))
+            }
+        }
+        .frame(width: 16)
+    }
+
+    @ViewBuilder
+    private func eventDetailsView(for event: MatchEvent, isHome: Bool) -> some View {
+        let align = isHome ? HorizontalAlignment.trailing : HorizontalAlignment.leading
+        VStack(alignment: align, spacing: event.type == "subst" ? 2 : 1) {
+            if event.type == "subst" {
+                Text(event.assistName ?? "Unknown")
+                    .font(.caption.bold())
+                    .foregroundStyle(Color.green)
+                    .lineLimit(1)
+                Text(event.playerName)
+                    .font(.caption2)
+                    .foregroundStyle(Color.red)
+                    .lineLimit(1)
+            } else {
+                Text(event.playerName)
+                    .font(.caption.bold())
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                
+                if let assist = event.assistName {
+                    Text("Assist: \(assist)")
+                        .font(.caption2)
+                        .foregroundStyle(Color(.systemGray))
+                        .lineLimit(1)
+                } else if event.type == "Goal" {
+                    Text(event.detail)
+                        .font(.caption2)
+                        .foregroundStyle(Color(.systemGray))
+                        .lineLimit(1)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: isHome ? .trailing : .leading)
     }
     
     @ViewBuilder
@@ -482,6 +516,7 @@ struct MarketSelectionView: View {
             }
             .padding()
             .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16))
+            .padding(.horizontal)
         }
     }
     
@@ -522,6 +557,91 @@ struct MarketSelectionView: View {
     }
     
     @ViewBuilder
+    private var bracketTab: some View {
+        if knockoutFixtures.isEmpty && !isLoadingStats {
+            Text("Bracket data not available.")
+                .foregroundStyle(.secondary)
+                .padding()
+        } else if knockoutFixtures.isEmpty {
+            ProgressView("Loading Bracket...")
+                .padding()
+        } else {
+            BracketTree(fixtures: knockoutFixtures, highlightTeam: fixture.homeTeam)
+                .padding()
+        }
+    }
+    
+    @ViewBuilder
+    private var injuriesTab: some View {
+        if injuries.isEmpty {
+            Text("No injuries reported.")
+                .foregroundStyle(.secondary)
+                .padding()
+        } else {
+            HStack(alignment: .top, spacing: 16) {
+                // Home Injuries
+                VStack(alignment: .leading, spacing: 12) {
+                    let homeTeamLower = fixture.homeTeam.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+                    let homeInjuries = injuries.filter { $0.teamName.lowercased().trimmingCharacters(in: .whitespacesAndNewlines).contains(homeTeamLower) || homeTeamLower.contains($0.teamName.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)) }
+                    if homeInjuries.isEmpty {
+                        Text("None").foregroundStyle(.secondary).font(.subheadline)
+                    } else {
+                        ForEach(homeInjuries) { injury in
+                            injuryRow(injury)
+                        }
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                
+                // Away Injuries
+                VStack(alignment: .leading, spacing: 12) {
+                    let awayTeamLower = fixture.awayTeam.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+                    let awayInjuries = injuries.filter { $0.teamName.lowercased().trimmingCharacters(in: .whitespacesAndNewlines).contains(awayTeamLower) || awayTeamLower.contains($0.teamName.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)) }
+                    if awayInjuries.isEmpty {
+                        Text("None").foregroundStyle(.secondary).font(.subheadline)
+                    } else {
+                        ForEach(awayInjuries) { injury in
+                            injuryRow(injury)
+                        }
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .padding()
+            .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16))
+            .padding(.horizontal)
+        }
+    }
+    
+    private func injuryRow(_ injury: Injury) -> some View {
+        HStack(spacing: 12) {
+            CachedImage(url: injury.playerPhoto) { image in
+                image.resizable().scaledToFill()
+            } placeholder: {
+                Image(systemName: "person.circle.fill")
+                    .resizable()
+                    .scaledToFit()
+                    .padding(8)
+                    .foregroundStyle(.gray.opacity(0.3))
+            }
+            .frame(width: 40, height: 40)
+            .background(Color(.systemGray6))
+            .clipShape(Circle())
+            
+            VStack(alignment: .leading, spacing: 2) {
+                Text(injury.playerName)
+                    .font(.subheadline)
+                    .fontWeight(.semibold)
+                
+                Text(injury.reason)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+        }
+    }
+    
+    @ViewBuilder
     private var lineupTab: some View {
         if lineups.isEmpty {
             Text("Lineups not available.")
@@ -541,6 +661,7 @@ struct MarketSelectionView: View {
             }
             .padding()
             .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16))
+            .padding(.horizontal)
         }
     }
     
@@ -692,11 +813,28 @@ struct MarketSelectionView: View {
                 return
             }
             
-            // Fetch events and lineups
+            // Fetch events, lineups, and injuries concurrently but safely
             async let eventsTask = APIService.shared.fetchMatchEvents(fixtureId: fixtureId)
             async let lineupsTask = APIService.shared.fetchLineups(fixtureId: fixtureId)
+            async let injuriesTask = APIService.shared.fetchInjuries(fixtureId: fixtureId)
             
-            let (fetchedEvents, fetchedLineups) = try await (eventsTask, lineupsTask)
+            let fetchedEvents = (try? await eventsTask) ?? []
+            let fetchedLineups = (try? await lineupsTask) ?? []
+            let fetchedInjuries = (try? await injuriesTask) ?? []
+            
+            if fixture.isKnockout, let leagueId = fixture.competition.apiId {
+                let season = APIService.shared.getCurrentSeasonYear(for: fixture.date) // Temporarily accessing from within MarketSelectionView requires making getCurrentSeasonYear internal, or we can use calendar logic here.
+                let calendar = Calendar.current
+                let year = calendar.component(.year, from: fixture.date)
+                let month = calendar.component(.month, from: fixture.date)
+                let seasonYear = month < 8 ? year - 1 : year
+                
+                if let bracketMatches = try? await APIService.shared.fetchTournamentFixtures(leagueId: leagueId, season: seasonYear) {
+                    await MainActor.run {
+                        self.knockoutFixtures = bracketMatches
+                    }
+                }
+            }
             
             // For standings/stats we need the league id and season
             // If the match is not listed with a league ID in constants, we might have to infer or just fetch from fixtures
@@ -771,6 +909,7 @@ struct MarketSelectionView: View {
             
             let finalEvents = fetchedEvents
             let finalLineups = fetchedLineups
+            let finalInjuries = fetchedInjuries
             let finalStandings = fetchedStandings
             let finalHomeStats = fetchedHomeStats
             let finalAwayStats = fetchedAwayStats
@@ -782,6 +921,7 @@ struct MarketSelectionView: View {
             await MainActor.run {
                 self.matchEvents = finalEvents.sorted(by: { $0.elapsed > $1.elapsed }) // Newest first
                 self.lineups = finalLineups
+                self.injuries = finalInjuries
                 self.standings = finalStandings
                 self.homeStats = finalHomeStats
                 self.awayStats = finalAwayStats

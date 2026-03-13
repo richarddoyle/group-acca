@@ -6,7 +6,8 @@
 //
 
 import SwiftUI
-
+import UIKit
+import UserNotifications
 
 class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDelegate {
     func application(_ application: UIApplication,

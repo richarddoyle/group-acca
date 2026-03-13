@@ -1,42 +1,48 @@
 import SwiftUI
 
 struct SelectionRow: View {
+    @EnvironmentObject var badgeManager: GroupBadgeManager
     let selection: Selection
     let memberName: String?
     let avatarUrl: String?
     let isLocked: Bool
     var showMatchStatus: Bool = true // defaults to true
+    var hideBadge: Bool = false // defaults to false
     
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             // Line 1: Member Name & Icon (Top Left, Tight Padding)
             if memberName != nil || avatarUrl != nil {
                 HStack(spacing: 6) {
-                    ZStack(alignment: .topTrailing) {
-                        ProfileImage(url: avatarUrl, size: 24)
-                            .shadow(color: .black.opacity(0.05), radius: 2, y: 1)
-                        
-                        if selection.isPaid {
-                            Image(systemName: "checkmark.seal.fill")
-                                .font(.system(size: 10))
-                                .foregroundStyle(.white, .green)
-                                .background(Circle().fill(.white))
-                                .offset(x: 4, y: -4)
-                        }
-                    }
+                    ProfileImage(url: avatarUrl, size: 24)
+                        .shadow(color: .black.opacity(0.05), radius: 2, y: 1)
                     
                     if let memberName = memberName {
-                        Text(memberName)
+                        Text("\(memberName)\(hideBadge ? "" : (badgeManager.emoji(for: selection.memberId, context: .general).map { " \($0)" } ?? ""))")
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
                     }
                     
                     Spacer()
+                    
+                    if selection.isPaid {
+                        Text("Paid")
+                            .font(.caption)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(Color.gray.opacity(0.15), in: Capsule())
+                            .foregroundStyle(Color.gray)
+                    }
                 }
             }
             
             // Line 2: Pick Name and Outcome
             HStack(spacing: 12) {
+                if selection.teamName != "Pending" {
+                    Image(systemName: marketIcon)
+                        .foregroundStyle(.secondary)
+                }
+                    
                 Text(selection.teamName)
                     .font(.headline)
                     .lineLimit(1)
