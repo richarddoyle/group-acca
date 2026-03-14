@@ -9,8 +9,19 @@ struct LoginView: View {
     @Binding var isAuthenticated: Bool
     
     var body: some View {
-        VStack(spacing: 20) {
-            Spacer()
+        ZStack {
+            // Background Gradients
+            VStack {
+                LinearGradient(colors: [Color.accentColor, .clear], startPoint: .top, endPoint: .bottom)
+                    .frame(height: 150)
+                Spacer()
+                LinearGradient(colors: [.clear, Color.accentColor], startPoint: .top, endPoint: .bottom)
+                    .frame(height: 150)
+            }
+            .ignoresSafeArea()
+            
+            VStack(spacing: 20) {
+                Spacer()
             
             VStack(spacing: 40) {
                 // Stacked Logo and Tagline
@@ -20,61 +31,87 @@ struct LoginView: View {
                         .scaledToFit()
                         .frame(maxWidth: .infinity)
                         .padding(.horizontal, 20)
-                        .padding(.bottom, -15)
+                        .padding(.bottom, 10) // 1. Added padding
                     
                     VStack(alignment: .center, spacing: 4) {
                         Text("Bet Together,")
                         Text("Win Together.")
                     }
                     .font(.largeTitle)
-                    .bold()
+                    .fontWeight(.heavy)
                 }
                 
-                // Features Columns
-                HStack(alignment: .top, spacing: 16) {
-                    VStack(spacing: 12) {
-                        Image(systemName: "person.3")
-                            .font(.title2)
-                            .foregroundStyle(Color.accentColor)
-                            .frame(height: 30)
-                        
-                        Text("Create group accumulators")
-                            .font(.footnote)
-                            .multilineTextAlignment(.center)
-                            .foregroundStyle(.secondary)
-                    }
-                    .frame(maxWidth: .infinity)
-                    
-                    VStack(spacing: 12) {
-                        Image(systemName: "chart.bar.xaxis")
-                            .font(.title2)
-                            .foregroundStyle(Color.accentColor)
-                            .frame(height: 30)
-                        
-                        Text("Track results live")
-                            .font(.footnote)
-                            .multilineTextAlignment(.center)
-                            .foregroundStyle(.secondary)
-                    }
-                    .frame(maxWidth: .infinity)
-                    
-                    VStack(spacing: 12) {
-                        Image(systemName: "trophy")
-                            .font(.title2)
-                            .foregroundStyle(Color.accentColor)
-                            .frame(height: 30)
-                        
-                        Text("Compete with your friends")
-                            .font(.footnote)
-                            .multilineTextAlignment(.center)
-                            .foregroundStyle(.secondary)
-                    }
-                    .frame(maxWidth: .infinity)
-                }
-                .padding(.horizontal, 20)
             }
             
             Spacer()
+            
+            // Features Rows (Moved down, changed to HStack rows)
+            VStack(alignment: .leading, spacing: 16) {
+                HStack(spacing: 16) {
+                    Image(systemName: "person.3") // SF Symbol
+                        .font(.title2)
+                        .foregroundStyle(Color.accentColor)
+                        .frame(width: 30)
+                    
+                    Text("Create group accumulators")
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
+                        .foregroundStyle(.primary) // Darkened text
+                    
+                    Spacer()
+                }
+                .padding()
+                .background(Color(.secondarySystemGroupedBackground))
+                .clipShape(RoundedRectangle(cornerRadius: 12))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12)
+                        .stroke(Color.green.opacity(0.5), lineWidth: 1)
+                )
+                
+                HStack(spacing: 16) {
+                    Image(systemName: "chart.bar.xaxis") // SF Symbol
+                        .font(.title2)
+                        .foregroundStyle(Color.accentColor)
+                        .frame(width: 30)
+                    
+                    Text("Track results live")
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
+                        .foregroundStyle(.primary) // Darkened text
+                    
+                    Spacer()
+                }
+                .padding()
+                .background(Color(.secondarySystemGroupedBackground))
+                .clipShape(RoundedRectangle(cornerRadius: 12))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12)
+                        .stroke(Color.green.opacity(0.5), lineWidth: 1)
+                )
+                
+                HStack(spacing: 16) {
+                    Image(systemName: "trophy") // SF Symbol
+                        .font(.title2)
+                        .foregroundStyle(Color.accentColor)
+                        .frame(width: 30)
+                    
+                    Text("Compete with your friends")
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
+                        .foregroundStyle(.primary) // Darkened text
+                    
+                    Spacer()
+                }
+                .padding()
+                .background(Color(.secondarySystemGroupedBackground))
+                .clipShape(RoundedRectangle(cornerRadius: 12))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12)
+                        .stroke(Color.green.opacity(0.5), lineWidth: 1)
+                )
+            }
+            .padding(.horizontal, 20)
+            .padding(.bottom, 20)
             
             if isSigningIn {
                 ProgressView("Signing in...")
@@ -93,6 +130,7 @@ struct LoginView: View {
                 .padding(.horizontal)
                 .padding(.bottom, 40)
             }
+        }
         }
         .alert("Sign In Failed", isPresented: $showingError) {
             Button("OK", role: .cancel) { }
