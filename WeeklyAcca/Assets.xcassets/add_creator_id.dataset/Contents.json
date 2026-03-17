@@ -1,0 +1,12 @@
+{
+  "data" : [
+    {
+      "filename" : "add_creator_id.sql",
+      "idiom" : "universal"
+    }
+  ],
+  "info" : {
+    "author" : "xcode",
+    "version" : 1
+  }
+}
