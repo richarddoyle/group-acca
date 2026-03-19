@@ -6,6 +6,16 @@ enum DashboardTab: String, CaseIterable {
     case members = "Members"
 }
 
+private struct CopyGroupFrameKey: PreferenceKey {
+    static let defaultValue = CGRect.zero
+    static func reduce(value: inout CGRect, nextValue: () -> CGRect) { value = nextValue() }
+}
+
+private struct CreateButtonFrameKey: PreferenceKey {
+    static let defaultValue = CGRect.zero
+    static func reduce(value: inout CGRect, nextValue: () -> CGRect) { value = nextValue() }
+}
+
 struct DashboardView: View {
     @StateObject private var badgeManager = GroupBadgeManager()
     @State private var currentGroup: BettingGroup
@@ -26,7 +36,17 @@ struct DashboardView: View {
     @State private var showingError = false
     @State private var showCopyToast = false
     @State private var memberCount: Int = 0
-    
+
+    // Coach marks — triggered after notification prompt is dismissed
+    @AppStorage("notificationPromptDismissed") private var notificationPromptDismissed = false
+    @AppStorage("onboardingCreatedGroup") private var onboardingCreatedGroup = false
+    @AppStorage("hasSeenShareCodeCoachMark") private var hasSeenShareCodeCoachMark = false
+    @AppStorage("hasSeenCreateAccaCoachMark") private var hasSeenCreateAccaCoachMark = false
+    @State private var showShareCodeCoachMark = false
+    @State private var showCreateAccaCoachMark = false
+    @State private var copyGroupFrame: CGRect = .zero
+    @State private var createButtonFrame: CGRect = .zero
+
     // Derived current week for "Make Your Pick" logic
     var currentWeek: Week? {
         weeks.sorted { $0.weekNumber > $1.weekNumber }.first
@@ -79,19 +99,26 @@ struct DashboardView: View {
                         HStack {
                             Text("\(memberCount) Members")
                             Text("•")
-                            Text("Code: \(currentGroup.joinCode)")
-                        
-                            Button {
-                                UIPasteboard.general.string = currentGroup.joinCode
-                                withAnimation { showCopyToast = true }
-                                DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-                                    withAnimation { showCopyToast = false }
+                            HStack(spacing: 4) {
+                                Text("Code: \(currentGroup.joinCode)")
+                                Button {
+                                    UIPasteboard.general.string = currentGroup.joinCode
+                                    withAnimation { showCopyToast = true }
+                                    DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                                        withAnimation { showCopyToast = false }
+                                    }
+                                } label: {
+                                    Image(systemName: "doc.on.doc")
+                                        .font(.caption)
+                                        .accessibilityLabel("Copy Join Code")
                                 }
-                            } label: {
-                                Image(systemName: "doc.on.doc")
-                                    .font(.caption)
-                                    .accessibilityLabel("Copy Join Code")
                             }
+                            .background(GeometryReader { geo in
+                                Color.clear.preference(
+                                    key: CopyGroupFrameKey.self,
+                                    value: geo.frame(in: .named("dashboard"))
+                                )
+                            })
                         }
                     }
                     .font(.subheadline)
@@ -169,7 +196,18 @@ struct DashboardView: View {
                         }
                         .padding(.horizontal, 12)
                         .padding(.vertical, 6)
+                        .background(
+                            Capsule().fill(showCreateAccaCoachMark
+                                ? Color.accentColor.opacity(0.15)
+                                : Color.clear)
+                        )
                         .clipShape(Capsule())
+                        .background(GeometryReader { geo in
+                            Color.clear.preference(
+                                key: CreateButtonFrameKey.self,
+                                value: geo.frame(in: .named("dashboard"))
+                            )
+                        })
                     }
                 }
             }
@@ -203,6 +241,9 @@ struct DashboardView: View {
                 })
             }
         }
+        .coordinateSpace(name: "dashboard")
+        .onPreferenceChange(CopyGroupFrameKey.self) { frame in copyGroupFrame = frame }
+        .onPreferenceChange(CreateButtonFrameKey.self) { frame in createButtonFrame = frame }
         .environmentObject(badgeManager)
         .overlay(alignment: .bottom) {
             if showCopyToast {
@@ -217,6 +258,110 @@ struct DashboardView: View {
                     .padding(.bottom, 80)
                     .zIndex(1)
             }
+        }
+        // Coach mark 1: Share join code (create-group flow only)
+        .overlay {
+            if showShareCodeCoachMark {
+                ZStack {
+                    Color.black.opacity(0.5).ignoresSafeArea()
+
+                    // Spotlight: bright copy of code text + copy icon
+                    HStack(spacing: 4) {
+                        Text("Code: \(currentGroup.joinCode)")
+                        Image(systemName: "doc.on.doc").font(.caption)
+                    }
+                    .font(.subheadline)
+                    .foregroundStyle(Color.white)
+                    .position(x: copyGroupFrame.midX, y: copyGroupFrame.midY)
+
+                    // Tooltip: triangle tip just below the copy icon (right end of group frame)
+                    VStack(spacing: 0) {
+                        Image(systemName: "arrowtriangle.up.fill")
+                            .font(.system(size: 10))
+                            .foregroundStyle(.white)
+                        Text("Share this code\nwith your mates")
+                            .font(.subheadline)
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 10)
+                            .background(Color.white)
+                            .foregroundStyle(Color.black)
+                            .clipShape(RoundedRectangle(cornerRadius: 10))
+                            .shadow(color: .black.opacity(0.15), radius: 6, x: 0, y: 3)
+                    }
+                    .fixedSize()
+                    .position(
+                        x: copyGroupFrame.maxX - 6,
+                        y: copyGroupFrame.maxY + 36
+                    )
+                }
+                .onTapGesture {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        hasSeenShareCodeCoachMark = true
+                        showShareCodeCoachMark = false
+                    }
+                    if !hasSeenCreateAccaCoachMark {
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+                            withAnimation(.easeInOut(duration: 0.2)) {
+                                showCreateAccaCoachMark = true
+                            }
+                        }
+                    }
+                }
+                .transition(.opacity)
+                .zIndex(10)
+            }
+        }
+        // Coach mark 2: Create acca button (both flows)
+        .overlay {
+            if showCreateAccaCoachMark {
+                ZStack {
+                    Color.black.opacity(0.5).ignoresSafeArea()
+
+                    // Tooltip: triangle tip just below the Create button.
+                    // The nav bar renders above the SwiftUI overlay so the real
+                    // button is already naturally highlighted — no duplicate needed.
+                    VStack(spacing: 0) {
+                        Image(systemName: "arrowtriangle.up.fill")
+                            .font(.system(size: 10))
+                            .foregroundStyle(.white)
+                        Text("Create your first\nacca here")
+                            .font(.subheadline)
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 10)
+                            .background(Color.white)
+                            .foregroundStyle(Color.black)
+                            .clipShape(RoundedRectangle(cornerRadius: 10))
+                            .shadow(color: .black.opacity(0.15), radius: 6, x: 0, y: 3)
+                    }
+                    .fixedSize()
+                    .position(
+                        x: effectiveCreateButtonFrame.midX,
+                        y: effectiveCreateButtonFrame.maxY + 36
+                    )
+                }
+                .onTapGesture {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        hasSeenCreateAccaCoachMark = true
+                        showCreateAccaCoachMark = false
+                    }
+                }
+                .transition(.opacity)
+                .zIndex(10)
+            }
+        }
+        .onAppear {
+            tryStartCoachMarks()
+        }
+        .onChange(of: notificationPromptDismissed) { _, isDismissed in
+            if isDismissed { tryStartCoachMarks() }
+        }
+        .onChange(of: onboardingCreatedGroup) { _, _ in
+            tryStartCoachMarks()
+        }
+        .onChange(of: copyGroupFrame) { _, frame in
+            if frame != .zero { tryStartCoachMarks() }
         }
         .task {
             await loadWeeks()
@@ -280,6 +425,29 @@ struct DashboardView: View {
         } catch {
             print("Error loading weeks: \(error)")
             isLoading = false
+        }
+    }
+
+    // MARK: - Coach Marks
+
+    private var effectiveCreateButtonFrame: CGRect {
+        guard createButtonFrame.width > 5 else {
+            // Fallback: estimate nav bar trailing button position
+            let w = UIScreen.main.bounds.width
+            return CGRect(x: w - 92, y: 60, width: 80, height: 32)
+        }
+        return createButtonFrame
+    }
+
+    private func tryStartCoachMarks() {
+        guard notificationPromptDismissed else { return }
+        guard !showShareCodeCoachMark && !showCreateAccaCoachMark else { return }
+
+        if onboardingCreatedGroup && !hasSeenShareCodeCoachMark {
+            guard copyGroupFrame != .zero else { return }
+            withAnimation(.easeInOut(duration: 0.2)) { showShareCodeCoachMark = true }
+        } else if !hasSeenCreateAccaCoachMark {
+            withAnimation(.easeInOut(duration: 0.2)) { showCreateAccaCoachMark = true }
         }
     }
 }
