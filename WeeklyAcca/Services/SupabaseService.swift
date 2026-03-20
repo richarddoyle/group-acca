@@ -50,7 +50,7 @@ class SupabaseService {
             print("✅ SupabaseService: Sign in successful! User ID: \(session.user.id)")
             
             // Ensure profile exists for this user
-            try await ensureProfileExists(for: session.user)
+            try await ensureProfileExists()
             
         } catch {
             print("❌ SupabaseService: Sign in failed with error: \(error)")
@@ -59,8 +59,10 @@ class SupabaseService {
         }
     }
     
-    // Checks if a profile row exists for the user, creates one if not.
-    private func ensureProfileExists(for user: User) async throws {
+    // Checks if a profile row exists for the current user, creates one if not.
+    func ensureProfileExists() async throws {
+        guard let user = currentUser else { return }
+        
         // 1. Check if profile exists
         struct ProfileCheck: Decodable {
             let id: UUID
@@ -294,6 +296,93 @@ class SupabaseService {
             .execute()
             .value
         return weeks
+    }
+    
+    func fetchActiveFixtureIds(for userId: UUID) async throws -> Set<Int> {
+        let weeks = try await fetchAllMyWeeks(userId: userId)
+        let activeWeeks = weeks.filter { $0.status == .pending }
+        let weekIds = activeWeeks.map { $0.id }
+        
+        if weekIds.isEmpty { return [] }
+        
+        struct FixtureReturn: Codable {
+            let fixtureId: Int?
+            
+            enum CodingKeys: String, CodingKey {
+                case fixtureId = "fixture_id"
+            }
+        }
+        
+        let results: [FixtureReturn] = try await client
+            .from("selections")
+            .select("fixture_id")
+            .in("acca_id", values: weekIds)
+            .execute()
+            .value
+            
+        let activeIds = results.compactMap { $0.fixtureId }
+        return Set(activeIds)
+    }
+    
+    // Fetch selections for a specific fixture across all of the user's active groups
+    func fetchSelectionsForFixture(fixtureId: Int, userId: UUID) async throws -> [MemberSelectionDisplay] {
+        // 1. Get all active weeks (Accas) for this user across all groups
+        let weeks = try await fetchAllMyWeeks(userId: userId)
+        let activeWeeks = weeks.filter { $0.status == .pending }
+        let activeWeekIds = activeWeeks.map { $0.id }
+        
+        if activeWeekIds.isEmpty { return [] }
+        
+        // 2. Fetch all selections for this fixture from these active weeks
+        let selections: [Selection] = try await client
+            .from("selections")
+            .select()
+            .in("acca_id", values: activeWeekIds)
+            .eq("fixture_id", value: fixtureId)
+            .execute()
+            .value
+            
+        if selections.isEmpty { return [] }
+        
+        // 3. We need the member details and avatar URLs for each selection
+        // First, extract the group IDs from the active weeks that contain these selections
+        let matchingWeekIds = Set(selections.map { $0.accaId })
+        let matchingWeeks = activeWeeks.filter { matchingWeekIds.contains($0.id) }
+        let groupIds = Set(matchingWeeks.map { $0.groupId })
+        
+        // Fetch all members for these groups
+        var allMembers: [Member] = []
+        for groupId in groupIds {
+            let membersInGroup = try await fetchMembers(for: groupId)
+            allMembers.append(contentsOf: membersInGroup)
+        }
+        
+        // Fetch profiles for avatars
+        let userIdsToFetch = allMembers.compactMap { $0.userId }
+        let profiles = try await fetchProfiles(ids: userIdsToFetch)
+        let profileMap = Dictionary(uniqueKeysWithValues: profiles.map { ($0.id, $0) })
+        
+        // 4. Group by Member ID
+        let selectionsByMember = Dictionary(grouping: selections, by: { $0.memberId })
+        var displays: [MemberSelectionDisplay] = []
+        
+        for (memberId, memberSelections) in selectionsByMember {
+            if let member = allMembers.first(where: { $0.id == memberId }) {
+                // Determine avatar URL using member's underlying user UUID
+                var avatarUrl: String? = nil
+                if let uid = member.userId, let profile = profileMap[uid] {
+                    avatarUrl = profile.avatarUrl
+                }
+                
+                displays.append(MemberSelectionDisplay(
+                    member: member,
+                    selections: memberSelections,
+                    avatarUrl: avatarUrl
+                ))
+            }
+        }
+        
+        return displays
     }
     
     // Join a group by code

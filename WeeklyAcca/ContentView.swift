@@ -22,6 +22,8 @@ struct ContentView: View {
     private func checkAuthStatus() async {
         if SupabaseService.shared.currentUser != nil {
             isAuthenticated = true
+            // Ensure profile exists in case of manual DB truncations
+            try? await SupabaseService.shared.ensureProfileExists()
         } else {
             isAuthenticated = false
         }

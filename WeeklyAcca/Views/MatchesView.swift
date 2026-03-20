@@ -5,6 +5,7 @@ struct MatchesView: View {
     @State private var fixtures: [Competition: [Fixture]] = [:]
     @State private var isLoading = false
     @State private var errorMessage: String?
+    @State private var activeFixtureIds: Set<Int> = []
     
     // Generate next 7 days starting from today
     private var dates: [Date] {
@@ -114,7 +115,7 @@ struct MatchesView: View {
                                 Section {
                                     ForEach(compFixtures) { fixture in
                                         ZStack {
-                                            MatchRowView(fixture: fixture)
+                                            MatchRowView(fixture: fixture, isPartOfAcca: activeFixtureIds.contains(fixture.apiId ?? -1))
                                                 
                                             NavigationLink(destination: MarketSelectionView(
                                                 fixture: fixture,
@@ -171,8 +172,12 @@ struct MatchesView: View {
                     }
                 }
                 
+                // 4. Fetch Active Fixture IDs
+                let activeIds = try? await SupabaseService.shared.fetchActiveFixtureIds(for: SupabaseService.shared.currentUserId)
+                
                 await MainActor.run {
                     self.fixtures = filteredFixtures
+                    self.activeFixtureIds = activeIds ?? []
                     self.isLoading = false
                 }
             } catch {
@@ -237,6 +242,8 @@ struct MatchRowView: View {
     var takenByAvatarUrl: String? = nil
     var takenByBadgeEmoji: String? = nil
     
+    var isPartOfAcca: Bool = false
+    
     var body: some View {
         VStack(spacing: 8) {
             // Kickoff time or status + Taken Indicator
@@ -246,10 +253,21 @@ struct MatchRowView: View {
                     .foregroundStyle(.secondary)
                 Spacer()
                 
-                if takenByMember != nil {
-                    HStack(spacing: 4) {
-                        ProfileImage(url: takenByAvatarUrl, size: 16)
-                            .shadow(color: .black.opacity(0.05), radius: 1, y: 0.5)
+                HStack(spacing: 8) {
+                    if isPartOfAcca {
+                        Text("In Acca")
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(Color.accentColor)
+                            .clipShape(Capsule())
+                    }
+                    
+                    if takenByMember != nil {
+                        HStack(spacing: 4) {
+                            ProfileImage(url: takenByAvatarUrl, size: 16)
+                                .shadow(color: .black.opacity(0.05), radius: 1, y: 0.5)
                         
                         if let emoji = takenByBadgeEmoji {
                             Text(emoji)
@@ -263,6 +281,7 @@ struct MatchRowView: View {
                             .padding(.vertical, 2)
                             .background(Color.yellow)
                             .clipShape(Capsule())
+                        }
                     }
                 }
             }

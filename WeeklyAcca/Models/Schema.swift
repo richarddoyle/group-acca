@@ -161,3 +161,11 @@ extension Week {
         !isOpen
     }
 }
+
+// Helper struct for display to avoid complex logic in view
+struct MemberSelectionDisplay: Identifiable {
+    var id: UUID { member.id }
+    let member: Member
+    let selections: [Selection]
+    let avatarUrl: String?
+}

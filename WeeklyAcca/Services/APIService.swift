@@ -575,26 +575,65 @@ struct LeagueStandingRow: Identifiable {
 
 struct TeamStatistics {
     let form: String
+    
+    // Played
     let playedTotal: Int
+    let playedHome: Int
+    let playedAway: Int
+    
+    // Wins/Draws/Losses
+    let winsTotal: Int
+    let drawsTotal: Int
+    let lossesTotal: Int
+    
+    // Clean Sheets
     let cleanSheetTotal: Int
+    let cleanSheetHome: Int
+    let cleanSheetAway: Int
+    
+    // Failed to Score
     let failedToScoreTotal: Int
+    let failedToScoreHome: Int
+    let failedToScoreAway: Int
+    
+    // Goals Average
+    let avgGoalsScoredTotal: String
+    let avgGoalsConcededTotal: String
     
     init(apiStats: APITeamStatistics) {
         self.form = apiStats.form ?? ""
+        
         self.playedTotal = apiStats.fixtures.played.total
+        self.playedHome = apiStats.fixtures.played.home
+        self.playedAway = apiStats.fixtures.played.away
+        
+        self.winsTotal = apiStats.fixtures.wins.total
+        self.drawsTotal = apiStats.fixtures.draws.total
+        self.lossesTotal = apiStats.fixtures.loses.total
+        
         self.cleanSheetTotal = apiStats.clean_sheet.total
+        self.cleanSheetHome = apiStats.clean_sheet.home
+        self.cleanSheetAway = apiStats.clean_sheet.away
+        
         self.failedToScoreTotal = apiStats.failed_to_score.total
+        self.failedToScoreHome = apiStats.failed_to_score.home
+        self.failedToScoreAway = apiStats.failed_to_score.away
+        
+        self.avgGoalsScoredTotal = apiStats.goals.`for`.average.total
+        self.avgGoalsConcededTotal = apiStats.goals.against.average.total
     }
     
-    var cleanSheetPercentage: Double {
-        guard playedTotal > 0 else { return 0 }
-        return Double(cleanSheetTotal) / Double(playedTotal)
-    }
+    var winPercentage: Double { guard playedTotal > 0 else { return 0 }; return Double(winsTotal) / Double(playedTotal) }
+    var drawPercentage: Double { guard playedTotal > 0 else { return 0 }; return Double(drawsTotal) / Double(playedTotal) }
+    var lossPercentage: Double { guard playedTotal > 0 else { return 0 }; return Double(lossesTotal) / Double(playedTotal) }
     
-    var failedToScorePercentage: Double {
-        guard playedTotal > 0 else { return 0 }
-        return Double(failedToScoreTotal) / Double(playedTotal)
-    }
+    var cleanSheetPercentage: Double { guard playedTotal > 0 else { return 0 }; return Double(cleanSheetTotal) / Double(playedTotal) }
+    var homeCleanSheetPercentage: Double { guard playedHome > 0 else { return 0 }; return Double(cleanSheetHome) / Double(playedHome) }
+    var awayCleanSheetPercentage: Double { guard playedAway > 0 else { return 0 }; return Double(cleanSheetAway) / Double(playedAway) }
+    
+    var failedToScorePercentage: Double { guard playedTotal > 0 else { return 0 }; return Double(failedToScoreTotal) / Double(playedTotal) }
+    var homeFailedToScorePercentage: Double { guard playedHome > 0 else { return 0 }; return Double(failedToScoreHome) / Double(playedHome) }
+    var awayFailedToScorePercentage: Double { guard playedAway > 0 else { return 0 }; return Double(failedToScoreAway) / Double(playedAway) }
 }
 
 // MARK: - Injury Models

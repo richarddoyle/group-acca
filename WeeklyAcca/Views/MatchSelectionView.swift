@@ -411,74 +411,41 @@ struct MatchSelectionView: View {
         isFetchingForms = true
         
         Task {
-            defer {
-                Task { @MainActor in
-                    self.isFetchingForms = false
-                }
-            }
+            let competitions = filteredCompetitions
+            var allForms: [String: String] = [:]
             
-            var teamsToFetch: [(Int, String)] = []
-            for fixturesList in fixtures.values {
-                for f in fixturesList {
-                    if let hid = f.homeTeamId { teamsToFetch.append((hid, f.homeTeam)) }
-                    if let aid = f.awayTeamId { teamsToFetch.append((aid, f.awayTeam)) }
-                }
-            }
+            let season = APIService.shared.getCurrentSeasonYear(for: selectedDate)
             
-            var uniqueTeams: [Int: String] = [:]
-            for (id, name) in teamsToFetch {
-                uniqueTeams[id] = name
-            }
-            
-            
-            await withTaskGroup(of: (String, String, String?).self) { group in
-                let teamList = Array(uniqueTeams)
-                for (index, team) in teamList.enumerated() {
-                    let teamId = team.key
-                    let teamName = team.value
-                    
+            await withTaskGroup(of: [String: String]?.self) { group in
+                for comp in competitions {
+                    guard let apiId = comp.apiId else { continue }
                     group.addTask {
-                        // Stagger requests by 0.15s to avoid API-football 10 req/s free tier limit
-                        let delay = Double(index) * 0.15
-                        if delay > 0 {
-                            try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
-                        }
-                        
                         do {
-                            let recentFixtures = try await APIService.shared.fetchTeamRecentFixtures(teamId: teamId)
-                            var formString = ""
-                            // Process oldest to newest so the most recent result is on the right
-                            for f in recentFixtures.reversed() {
-                                guard let homeScore = f.homeGoals, let awayScore = f.awayGoals else { continue }
-                                let isHome = f.homeTeamId == teamId
-                                let isAway = f.awayTeamId == teamId
-                                
-                                if homeScore == awayScore {
-                                    formString += "D"
-                                } else if isHome {
-                                    formString += (homeScore > awayScore) ? "W" : "L"
-                                } else if isAway {
-                                    formString += (awayScore > homeScore) ? "W" : "L"
-                                }
+                            let standings = try await APIService.shared.fetchStandings(leagueId: apiId, season: season)
+                            
+                            var leagueForms: [String: String] = [:]
+                            for row in standings {
+                                leagueForms[row.teamName] = row.form.isEmpty ? "---" : row.form
                             }
-                            return (teamName, formString.isEmpty ? "---" : formString, nil)
+                            return leagueForms
                         } catch {
-                            return (teamName, "---", "API Error for \(teamName): \(error.localizedDescription)")
+                            print("Failed to fetch forms for league \(comp.name): \(error)")
+                            return nil
                         }
                     }
                 }
                 
-                for await (teamName, formString, errorResult) in group {
-                    await MainActor.run {
-                        self.teamForms[teamName] = formString
-                        if let errorResult = errorResult {
-                            self.errorMessage = errorResult
-                        }
+                for await result in group {
+                    if let result = result {
+                        allForms.merge(result) { current, _ in current }
                     }
                 }
             }
             
             await MainActor.run {
+                for (team, form) in allForms {
+                    self.teamForms[team] = form
+                }
                 self.isFetchingForms = false
             }
         }
@@ -848,7 +815,7 @@ extension MatchSelectionView {
         let explanationText: String? = {
             switch activePill {
             case .none: return nil
-            case .form: return "Form is based on the result of the team's last 5 games regardless of the competition."
+            case .form: return "Form is based on the team's last 5 league matches."
             case .cleanSheet: return "Percentage of league matches where the team conceded 0 goals."
             case .btts: return "Percentage of league matches where BOTH teams scored at least 1 goal."
             case .position: return "The team's current position in their league standings."

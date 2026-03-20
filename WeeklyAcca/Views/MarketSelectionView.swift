@@ -26,6 +26,8 @@ struct MarketSelectionView: View {
     @State private var recentAwayFixtures: [Fixture] = []
     @State private var isLoadingStats = true
     
+    @State private var memberSelections: [MemberSelectionDisplay] = []
+    
     @State private var scrollOffset: CGFloat = 0
     
     // Dynamically generated based on read-only state and match status
@@ -54,6 +56,10 @@ struct MarketSelectionView: View {
         availableTabs.append(.injuries)
         availableTabs.append(.stats)
         
+        if !memberSelections.isEmpty {
+            availableTabs.append(.acca)
+        }
+        
         return availableTabs
     }
     
@@ -65,6 +71,7 @@ struct MarketSelectionView: View {
         case lineups = "Lineup"
         case injuries = "Injuries"
         case stats = "Stats"
+        case acca = "Acca"
     }
     
     init(fixture: Fixture, onSelect: @escaping (String, Double, String?) -> Void, isReadOnly: Bool = false) {
@@ -141,6 +148,7 @@ struct MarketSelectionView: View {
                                 case .lineups: lineupTab
                                 case .injuries: injuriesTab
                                 case .stats: pickStatsTab
+                                case .acca: accaTab
                                 }
                             }
                             .padding(.top, 16)
@@ -378,33 +386,18 @@ struct MarketSelectionView: View {
                     let isHome = event.teamName == fixture.homeTeam
                     
                     HStack(spacing: 8) {
-                        // Left side (Away Team)
-                        if !isHome {
-                            eventDetailsView(for: event, isHome: false)
-                            eventIconWrapper(for: event)
-                        } else {
-                            Spacer()
-                        }
-                        
-                        // Center (Time)
-                        HStack(alignment: .top, spacing: 1) {
-                            Text("\(event.elapsed)'")
-                                .font(.caption2.bold())
-                                .foregroundStyle(.primary)
-                            if let extra = event.extra {
-                                Text("+\(extra)'")
-                                    .font(.system(size: 8, weight: .bold))
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
-                        .frame(width: 32, alignment: .center)
-                        
-                        // Right side (Home Team)
                         if isHome {
+                            // Home Team -> Left Aligned
+                            timeView(for: event)
                             eventIconWrapper(for: event)
                             eventDetailsView(for: event, isHome: true)
+                            Spacer(minLength: 0)
                         } else {
-                            Spacer()
+                            // Away Team -> Right Aligned
+                            Spacer(minLength: 0)
+                            eventDetailsView(for: event, isHome: false)
+                            eventIconWrapper(for: event)
+                            timeView(for: event)
                         }
                     }
                     .padding(.vertical, 10)
@@ -420,6 +413,21 @@ struct MarketSelectionView: View {
             .shadow(color: .black.opacity(0.04), radius: 6, y: 3)
             .padding(.horizontal)
         }
+    }
+    
+    @ViewBuilder
+    private func timeView(for event: MatchEvent) -> some View {
+        HStack(alignment: .top, spacing: 1) {
+            Text("\(event.elapsed)'")
+                .font(.caption2.bold())
+                .foregroundStyle(.primary)
+            if let extra = event.extra {
+                Text("+\(extra)'")
+                    .font(.system(size: 8, weight: .bold))
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .frame(width: 32, alignment: .center)
     }
     
     @ViewBuilder
@@ -442,7 +450,7 @@ struct MarketSelectionView: View {
 
     @ViewBuilder
     private func eventDetailsView(for event: MatchEvent, isHome: Bool) -> some View {
-        let align = isHome ? HorizontalAlignment.trailing : HorizontalAlignment.leading
+        let align = isHome ? HorizontalAlignment.leading : HorizontalAlignment.trailing
         VStack(alignment: align, spacing: event.type == "subst" ? 2 : 1) {
             if event.type == "subst" {
                 Text(event.assistName ?? "Unknown")
@@ -472,7 +480,6 @@ struct MarketSelectionView: View {
                 }
             }
         }
-        .frame(maxWidth: .infinity, alignment: isHome ? .trailing : .leading)
     }
     
     @ViewBuilder
@@ -748,19 +755,27 @@ struct MarketSelectionView: View {
                     .shadow(color: .black.opacity(0.05), radius: 5, x: 0, y: 2)
                 }
                 
-                // Clean Sheets
-                marketSection(title: "Clean Sheets") {
+                // Win Rate
+                marketSection(title: "Win Rate") {
                     statRowWithLogos(
-                        homeVal: "\(Int(home.cleanSheetPercentage * 100))%",
-                        awayVal: "\(Int(away.cleanSheetPercentage * 100))%"
+                        homeVal: "\(Int(home.winPercentage * 100))%",
+                        awayVal: "\(Int(away.winPercentage * 100))%"
                     )
                 }
                 
-                // Failed To Score
-                marketSection(title: "Failed To Score") {
+                // Average Goals Scored
+                marketSection(title: "Average Goals Scored / Match") {
                     statRowWithLogos(
-                        homeVal: "\(Int(home.failedToScorePercentage * 100))%",
-                        awayVal: "\(Int(away.failedToScorePercentage * 100))%"
+                        homeVal: home.avgGoalsScoredTotal,
+                        awayVal: away.avgGoalsScoredTotal
+                    )
+                }
+                
+                // Average Goals Conceded
+                marketSection(title: "Average Goals Conceded / Match") {
+                    statRowWithLogos(
+                        homeVal: home.avgGoalsConcededTotal,
+                        awayVal: away.avgGoalsConcededTotal
                     )
                 }
                 
@@ -769,6 +784,38 @@ struct MarketSelectionView: View {
                     statRowWithLogos(
                         homeVal: homeBttsPercentage != nil ? "\(Int(homeBttsPercentage! * 100))%" : "--%",
                         awayVal: awayBttsPercentage != nil ? "\(Int(awayBttsPercentage! * 100))%" : "--%"
+                    )
+                }
+                
+                // Clean Sheets (Overall)
+                marketSection(title: "Clean Sheets (Overall)") {
+                    statRowWithLogos(
+                        homeVal: "\(Int(home.cleanSheetPercentage * 100))%",
+                        awayVal: "\(Int(away.cleanSheetPercentage * 100))%"
+                    )
+                }
+                
+                // Clean Sheets (Home/Away Split)
+                marketSection(title: "Clean Sheets (Home / Away Split)") {
+                    statRowWithLogos(
+                        homeVal: "\(Int(home.homeCleanSheetPercentage * 100))%",
+                        awayVal: "\(Int(away.awayCleanSheetPercentage * 100))%"
+                    )
+                }
+                
+                // Failed To Score (Overall)
+                marketSection(title: "Failed To Score (Overall)") {
+                    statRowWithLogos(
+                        homeVal: "\(Int(home.failedToScorePercentage * 100))%",
+                        awayVal: "\(Int(away.failedToScorePercentage * 100))%"
+                    )
+                }
+                
+                // Failed To Score (Home/Away Split)
+                marketSection(title: "Failed To Score (Home / Away Split)") {
+                    statRowWithLogos(
+                        homeVal: "\(Int(home.homeFailedToScorePercentage * 100))%",
+                        awayVal: "\(Int(away.awayFailedToScorePercentage * 100))%"
                     )
                 }
             }
@@ -802,6 +849,39 @@ struct MarketSelectionView: View {
         .padding()
         .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16))
         .shadow(color: .black.opacity(0.05), radius: 5, x: 0, y: 2)
+    }
+    
+    // MARK: - Acca Tab View
+    
+    @ViewBuilder
+    private var accaTab: some View {
+        if memberSelections.isEmpty {
+            Text("No members have picked this match.")
+                .foregroundStyle(.secondary)
+                .padding()
+        } else {
+            VStack(spacing: 0) {
+                ForEach(memberSelections) { memberSelection in
+                    ForEach(memberSelection.selections, id: \.id) { selection in
+                        SelectionRow(
+                            selection: selection,
+                            memberName: memberSelection.member.name,
+                            avatarUrl: memberSelection.avatarUrl,
+                            isLocked: true // Read-only view in this context
+                        )
+                        .padding(.vertical, 12)
+                        .padding(.horizontal, 16)
+                        
+                        if selection != memberSelection.selections.last || memberSelection.id != memberSelections.last?.id {
+                            Divider()
+                                .padding(.leading, 64)
+                        }
+                    }
+                }
+            }
+            .background(Color(.systemBackground), in: RoundedRectangle(cornerRadius: 12))
+            .padding(.horizontal)
+        }
     }
     
     // MARK: - Data Fetching
@@ -929,6 +1009,21 @@ struct MarketSelectionView: View {
                 self.recentAwayFixtures = finalAwayFixtures
                 self.homeBttsPercentage = finalHomeBtts
                 self.awayBttsPercentage = finalAwayBtts
+            }
+            
+            // Try fetching active member picks for this fixture
+            if let fixtureId = fixture.apiId {
+                let selections = (try? await SupabaseService.shared.fetchSelectionsForFixture(
+                    fixtureId: fixtureId,
+                    userId: SupabaseService.shared.currentUserId
+                )) ?? []
+                
+                await MainActor.run {
+                    self.memberSelections = selections
+                }
+            }
+            
+            await MainActor.run {
                 self.isLoadingStats = false
             }
             

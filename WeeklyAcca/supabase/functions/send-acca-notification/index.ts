@@ -8,7 +8,7 @@ const apnsTeamId = Deno.env.get("APNS_TEAM_ID") ?? "";
 const apnsBundleId = Deno.env.get("APNS_BUNDLE_ID") ?? "com.rudedog-productions.WeeklyAcca";
 // The `.p8` key content stored safely in Supabase Secrets as APNS_AUTH_KEY
 const apnsAuthKey = Deno.env.get("APNS_AUTH_KEY") ?? "";
-const isProduction = true; // Set to false if using APNs Sandbox
+const isProduction = Deno.env.get("APNS_ENV") === "production"; // Default to sandbox unless explicitly set to 'production' in Supabase secrets
 
 const apnsHost = isProduction ? "api.push.apple.com" : "api.development.push.apple.com";
 
