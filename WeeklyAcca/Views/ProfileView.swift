@@ -200,7 +200,7 @@ struct ProfileView: View {
             } message: {
                 Text(errorMessage)
             }
-            .onChange(of: selectedItem) { newItem in
+            .onChange(of: selectedItem) { _, newItem in
                 if let newItem {
                     uploadPhoto(newItem)
                 }

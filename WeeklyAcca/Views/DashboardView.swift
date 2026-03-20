@@ -431,15 +431,6 @@ struct DashboardView: View {
 
     // MARK: - Coach Marks
 
-    private var effectiveCreateButtonFrame: CGRect {
-        guard createButtonFrame.width > 5 else {
-            // Fallback: estimate nav bar trailing button position
-            let w = UIScreen.main.bounds.width
-            return CGRect(x: w - 92, y: 60, width: 80, height: 32)
-        }
-        return createButtonFrame
-    }
-
     private func tryStartCoachMarks() {
         guard notificationPromptDismissed else { return }
         guard !showShareCodeCoachMark && !showCreateAccaCoachMark else { return }
