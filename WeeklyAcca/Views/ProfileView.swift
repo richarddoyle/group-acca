@@ -14,6 +14,9 @@ struct ProfileView: View {
     @State private var editingUsername: String = ""
     @State private var selectedItem: PhotosPickerItem?
     @AppStorage("liveActivitiesEnabled") private var liveActivitiesEnabled = true
+    @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = true
+    @AppStorage("hasSeenShareCodeCoachMark") private var hasSeenShareCodeCoachMark = true
+    @AppStorage("hasSeenCreateAccaCoachMark") private var hasSeenCreateAccaCoachMark = true
     
     @State private var isLoading = false
     @State private var isSaving = false
@@ -21,6 +24,7 @@ struct ProfileView: View {
     @State private var errorTitle = ""
     @State private var errorMessage = ""
     @State private var showingError = false
+    @State private var showingDevSettings = false
     
     @State private var fieldToEdit: EditField? = nil
     
@@ -36,6 +40,9 @@ struct ProfileView: View {
                     Text("Profile")
                         .font(.largeTitle)
                         .fontWeight(.bold)
+                        .onLongPressGesture(minimumDuration: 1.0) {
+                            showingDevSettings = true
+                        }
                     Spacer()
                 }
                 .padding(.horizontal, 20)
@@ -184,6 +191,9 @@ struct ProfileView: View {
             }
             .refreshable {
                 await loadData()
+            }
+            .sheet(isPresented: $showingDevSettings) {
+                DeveloperSettingsView()
             }
             .alert(errorTitle, isPresented: $showingError) {
                 Button("OK", role: .cancel) { }

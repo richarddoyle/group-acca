@@ -321,10 +321,12 @@ struct DashboardView: View {
                     // Tooltip: triangle tip just below the Create button.
                     // The nav bar renders above the SwiftUI overlay so the real
                     // button is already naturally highlighted — no duplicate needed.
-                    VStack(spacing: 0) {
+                    VStack(alignment: .trailing, spacing: 0) {
                         Image(systemName: "arrowtriangle.up.fill")
-                            .font(.system(size: 10))
+                            .font(.system(size: 16))
                             .foregroundStyle(.white)
+                            .padding(.trailing, 28) // Aligns perfectly with standard Nav Bar button items
+                        
                         Text("Create your first\nacca here")
                             .font(.subheadline)
                             .multilineTextAlignment(.center)
@@ -336,10 +338,9 @@ struct DashboardView: View {
                             .shadow(color: .black.opacity(0.15), radius: 6, x: 0, y: 3)
                     }
                     .fixedSize()
-                    .position(
-                        x: effectiveCreateButtonFrame.midX,
-                        y: effectiveCreateButtonFrame.maxY + 36
-                    )
+                    .padding(.top, 48) // Safe vertical buffer from Nav Bar
+                    .padding(.trailing, 16) // Secure distance from screen edge
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
                 }
                 .onTapGesture {
                     withAnimation(.easeInOut(duration: 0.2)) {

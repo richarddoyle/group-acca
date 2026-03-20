@@ -59,8 +59,6 @@
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		4218E0E72F405CC30022B42F /* WeeklyAcca */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			exceptions = (
-			);
 			path = WeeklyAcca;
 			sourceTree = "<group>";
 		};
