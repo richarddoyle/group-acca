@@ -385,11 +385,11 @@
 				INFOPLIST_KEY_CFBundleDisplayName = "Group Acca";
 				INFOPLIST_KEY_CFBundleName = "Group Acca";
 				INFOPLIST_KEY_NSSupportsLiveActivities = YES;
+				INFOPLIST_KEY_UIAppFonts = "BarlowCondensed-Medium.ttf";
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphonesimulator*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents[sdk=iphoneos*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents[sdk=iphonesimulator*]" = YES;
-				INFOPLIST_KEY_UIAppFonts = "BarlowCondensed-Medium.ttf";
 				"INFOPLIST_KEY_UILaunchScreen_Generation[sdk=iphoneos*]" = YES;
 				"INFOPLIST_KEY_UILaunchScreen_Generation[sdk=iphonesimulator*]" = YES;
 				"INFOPLIST_KEY_UIStatusBarStyle[sdk=iphoneos*]" = UIStatusBarStyleDefault;
@@ -433,11 +433,11 @@
 				INFOPLIST_KEY_CFBundleDisplayName = "Group Acca";
 				INFOPLIST_KEY_CFBundleName = "Group Acca";
 				INFOPLIST_KEY_NSSupportsLiveActivities = YES;
+				INFOPLIST_KEY_UIAppFonts = "BarlowCondensed-Medium.ttf";
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphonesimulator*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents[sdk=iphoneos*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents[sdk=iphonesimulator*]" = YES;
-				INFOPLIST_KEY_UIAppFonts = "BarlowCondensed-Medium.ttf";
 				"INFOPLIST_KEY_UILaunchScreen_Generation[sdk=iphoneos*]" = YES;
 				"INFOPLIST_KEY_UILaunchScreen_Generation[sdk=iphonesimulator*]" = YES;
 				"INFOPLIST_KEY_UIStatusBarStyle[sdk=iphoneos*]" = UIStatusBarStyleDefault;
@@ -472,7 +472,7 @@
 				ASSETCATALOG_COMPILER_WIDGET_BACKGROUND_COLOR_NAME = WidgetBackground;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = 8454DSYY7V;
+				DEVELOPMENT_TEAM = DN46UK6DDG;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = WeeklyAccaWidget/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = WeeklyAccaWidget;
@@ -505,7 +505,7 @@
 				ASSETCATALOG_COMPILER_WIDGET_BACKGROUND_COLOR_NAME = WidgetBackground;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = 8454DSYY7V;
+				DEVELOPMENT_TEAM = DN46UK6DDG;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = WeeklyAccaWidget/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = WeeklyAccaWidget;
