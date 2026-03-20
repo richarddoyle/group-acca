@@ -3,13 +3,20 @@ import SwiftUI
 
 struct ContentView: View {
     @State private var selectedGroup: BettingGroup?
-    
     @State private var isAuthenticated = false
-    
+    @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = false
+
     var body: some View {
         Group {
             if isAuthenticated {
-                MainAppView(selectedGroup: $selectedGroup, isAuthenticated: $isAuthenticated)
+                if hasCompletedOnboarding {
+                    MainAppView(selectedGroup: $selectedGroup, isAuthenticated: $isAuthenticated)
+                } else {
+                    OnboardingView { completedGroup in
+                        selectedGroup = completedGroup
+                        hasCompletedOnboarding = true
+                    }
+                }
             } else {
                 LoginView(isAuthenticated: $isAuthenticated)
             }
@@ -100,12 +107,14 @@ struct MainAppView: View {
     
     private func requestPushNotificationPermission() {
         UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { granted, error in
-            if granted {
-                DispatchQueue.main.async {
+            DispatchQueue.main.async {
+                // Signal that the prompt has been dismissed (allow or deny) so coach marks can show
+                UserDefaults.standard.set(true, forKey: "notificationPromptDismissed")
+                if granted {
                     UIApplication.shared.registerForRemoteNotifications()
+                } else if let error = error {
+                    print("APNs Auth error: \(error.localizedDescription)")
                 }
-            } else if let error = error {
-                print("APNs Auth error: \(error.localizedDescription)")
             }
         }
         

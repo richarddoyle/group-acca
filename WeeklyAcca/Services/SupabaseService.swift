@@ -396,7 +396,7 @@ class SupabaseService {
             .value
         
         guard let group = groups.first else {
-            throw NSError(domain: "Supabase", code: 404, userInfo: [NSLocalizedDescriptionKey: "Invalid Join Code"])
+            throw NSError(domain: "Supabase", code: 404, userInfo: [NSLocalizedDescriptionKey: "That code doesn't match any group. Double check with your admin"])
         }
         
         // 2. Create member
