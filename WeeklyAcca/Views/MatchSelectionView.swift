@@ -12,12 +12,19 @@ struct MatchSelectionView: View {
     @State private var isLoading = false
     @State private var errorMessage: String?
     @State private var selectedFixture: Fixture? // For sheet presentation
+    @State private var isSearchPresented = false
     
     // Pill State
     enum ActivePill {
-        case none, form, cleanSheet, btts, position
+        case none, form, cleanSheet, btts, position, predBtts, predOver25
     }
+    
+    enum SortOption {
+        case league, highToLow, lowToHigh
+    }
+    
     @State private var activePill: ActivePill = .none
+    @State private var sortOption: SortOption = .league
     
     // Data State
     @State private var teamForms: [String: String] = [:]
@@ -31,6 +38,10 @@ struct MatchSelectionView: View {
     
     @State private var teamPositions: [String: Int] = [:]
     @State private var isFetchingPositions: Bool = false
+    
+    @State private var fixtureBttsPredictions: [String: Double] = [:]
+    @State private var fixtureOver25Predictions: [String: Double] = [:]
+    @State private var isFetchingPredictions: Bool = false
     
     // Pick Validation State
     @State private var showDuplicateError = false
@@ -123,10 +134,10 @@ struct MatchSelectionView: View {
         }
     }
     
-    var body: some View {
-        NavigationStack {
-            VStack(spacing: 0) {
-                // Date Tabs
+    @ViewBuilder
+    private var mainContent: some View {
+        VStack(spacing: 0) {
+            // Date Tabs
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 12) {
                         ForEach(dates, id: \.self) { date in
@@ -147,6 +158,10 @@ struct MatchSelectionView: View {
                                     } else if activePill == .position {
                                         teamPositions.removeAll()
                                         fetchPositions()
+                                    } else if activePill == .predBtts || activePill == .predOver25 {
+                                        fixtureBttsPredictions.removeAll()
+                                        fixtureOver25Predictions.removeAll()
+                                        fetchPredictions()
                                     }
                                 }
                             }
@@ -196,6 +211,40 @@ struct MatchSelectionView: View {
                         
                         Button {
                             withAnimation {
+                                activePill = activePill == .predBtts ? .none : .predBtts
+                                if activePill == .predBtts && fixtureBttsPredictions.isEmpty {
+                                    fetchPredictions()
+                                }
+                            }
+                        } label: {
+                            Text("BTTS Predict")
+                                .font(.subheadline)
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 8)
+                                .background(activePill == .predBtts ? Color.accentColor : Color(.systemGray5))
+                                .foregroundStyle(activePill == .predBtts ? .white : .primary)
+                                .clipShape(Capsule())
+                        }
+                        
+                        Button {
+                            withAnimation {
+                                activePill = activePill == .predOver25 ? .none : .predOver25
+                                if activePill == .predOver25 && fixtureOver25Predictions.isEmpty {
+                                    fetchPredictions()
+                                }
+                            }
+                        } label: {
+                            Text("Over 2.5 Predict")
+                                .font(.subheadline)
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 8)
+                                .background(activePill == .predOver25 ? Color.accentColor : Color(.systemGray5))
+                                .foregroundStyle(activePill == .predOver25 ? .white : .primary)
+                                .clipShape(Capsule())
+                        }
+                        
+                        Button {
+                            withAnimation {
                                 activePill = activePill == .cleanSheet ? .none : .cleanSheet
                                 if activePill == .cleanSheet && teamCleanSheets.isEmpty {
                                     fetchCleanSheets()
@@ -229,11 +278,10 @@ struct MatchSelectionView: View {
                         }
                     }
                     .padding(.horizontal)
-                    .padding(.bottom, 8)
+                    .padding(.bottom, 4)
                 }
                 .background(Color(.systemBackground))
-                
-                Divider()
+                .zIndex(1)
                 
                 // Fixtures List
                 Group {
@@ -255,59 +303,139 @@ struct MatchSelectionView: View {
                         VStack(alignment: .leading, spacing: 0) {
                             List {
                                 if activePill != .none {
-                                    Section {
+                                    Section(content: {
                                         pillExplanationView
-                                    }
+                                    }, footer: {
+                                        if activePill == .position || activePill == .predBtts || activePill == .predOver25 {
+                                            HStack {
+                                                Spacer()
+                                                Menu {
+                                                    Picker("Sort By", selection: $sortOption) {
+                                                        Text("League").tag(SortOption.league)
+                                                        Text("High to Low").tag(SortOption.highToLow)
+                                                        Text("Low to High").tag(SortOption.lowToHigh)
+                                                    }
+                                                } label: {
+                                                    HStack(spacing: 4) {
+                                                        Image(systemName: "arrow.up.arrow.down")
+                                                        Text("Sort: \(sortOptionText)")
+                                                    }
+                                                    .font(.caption.bold())
+                                                    .foregroundColor(.primary)
+                                                    .padding(.horizontal, 12)
+                                                    .padding(.vertical, 6)
+                                                    .background(Color(.systemGray5))
+                                                    .clipShape(Capsule())
+                                                }
+                                            }
+                                            .padding(.top, 4)
+                                            .padding(.bottom, -8)
+                                        }
+                                    })
                                 }
                                 
-                            ForEach(filteredCompetitions, id: \.self) { competition in
-                                if let compFixtures = fixtures[competition]?.filter({ $0.status == "NS" && $0.date > Date() }), !compFixtures.isEmpty {
-                                    Section {
-                                        ForEach(compFixtures) { fixture in
-                                            Button {
-                                                selectedFixture = fixture
-                                            } label: {
-                                                let takenInfo = checkTaken(fixture: fixture)
-                                                MatchRowView(
-                                                    fixture: fixture,
-                                                    homeForm: teamForms[fixture.homeTeam],
-                                                    awayForm: teamForms[fixture.awayTeam],
-                                                    showForm: activePill == .form,
-                                                    homeCleanSheet: teamCleanSheets[fixture.homeTeam],
-                                                    awayCleanSheet: teamCleanSheets[fixture.awayTeam],
-                                                    showCleanSheets: activePill == .cleanSheet,
-                                                    homeBtts: teamBtts[fixture.homeTeam],
-                                                    awayBtts: teamBtts[fixture.awayTeam],
-                                                    showBtts: activePill == .btts,
-                                                    homePosition: teamPositions[fixture.homeTeam],
-                                                    awayPosition: teamPositions[fixture.awayTeam],
-                                                    showPositions: activePill == .position,
-                                                    isLoadingStats: activePill == .form ? isFetchingForms :
-                                                                    activePill == .cleanSheet ? isFetchingCleanSheets :
-                                                                    activePill == .btts ? isFetchingBtts :
-                                                                    activePill == .position ? isFetchingPositions : false,
-                                                    takenByMember: takenInfo?.name,
-                                                    takenByAvatarUrl: takenInfo?.avatarUrl,
-                                                    takenByBadgeEmoji: takenInfo != nil ? badgeManager.badges[takenInfo!.memberId] : nil
-                                                )
-                                                    .padding(.vertical, 4)
-                                                    .contentShape(Rectangle())
+                                if sortOption == .league || activePill == .none {
+                                    ForEach(filteredCompetitions, id: \.self) { competition in
+                                        if let compFixtures = fixtures[competition]?.filter({ $0.status == "NS" && $0.date > Date() }), !compFixtures.isEmpty {
+                                            Section {
+                                                ForEach(compFixtures) { fixture in
+                                                    matchRow(for: fixture)
+                                                }
+                                            } header: {
+                                                Text(competition.name)
                                             }
-                                            .buttonStyle(.plain)
                                         }
-                                    } header: {
-                                        Text(competition.name)
+                                    }
+                                } else {
+                                    let flattened = fixtures.values.flatMap { $0 }
+                                        .filter { $0.status == "NS" && $0.date > Date() }
+                                        .sorted { f1, f2 in
+                                            let v1 = sortValue(for: f1)
+                                            let v2 = sortValue(for: f2)
+                                            return sortOption == .highToLow ? v1 > v2 : v1 < v2
+                                        }
+                                    Section {
+                                        ForEach(flattened) { fixture in
+                                            matchRow(for: fixture)
+                                        }
                                     }
                                 }
                             }
-                        }
-                        .listStyle(.insetGrouped)
+                            .listStyle(.insetGrouped)
+                            .padding(.top, -24)
                         }
                     }
                 }
             }
+    }
+    
+    @ViewBuilder
+    private func matchRow(for fixture: Fixture) -> some View {
+        Button {
+            selectedFixture = fixture
+        } label: {
+            let takenInfo = checkTaken(fixture: fixture)
+            MatchRowView(
+                fixture: fixture,
+                homeForm: teamForms[fixture.homeTeam],
+                awayForm: teamForms[fixture.awayTeam],
+                showForm: activePill == .form,
+                homeCleanSheet: teamCleanSheets[fixture.homeTeam],
+                awayCleanSheet: teamCleanSheets[fixture.awayTeam],
+                showCleanSheets: activePill == .cleanSheet,
+                homeBtts: teamBtts[fixture.homeTeam],
+                awayBtts: teamBtts[fixture.awayTeam],
+                showBtts: activePill == .btts,
+                homePosition: teamPositions[fixture.homeTeam],
+                awayPosition: teamPositions[fixture.awayTeam],
+                showPositions: activePill == .position,
+                matchBttsPredict: fixtureBttsPredictions[String(fixture.apiId ?? 0)],
+                matchOver25Predict: fixtureOver25Predictions[String(fixture.apiId ?? 0)],
+                showBttsPredict: activePill == .predBtts,
+                showOver25Predict: activePill == .predOver25,
+                isLoadingStats: activePill == .form ? isFetchingForms :
+                                activePill == .cleanSheet ? isFetchingCleanSheets :
+                                activePill == .btts ? isFetchingBtts :
+                                activePill == .position ? isFetchingPositions :
+                                (activePill == .predBtts || activePill == .predOver25) ? isFetchingPredictions : false,
+                takenByMember: takenInfo?.name,
+                takenByAvatarUrl: takenInfo?.avatarUrl,
+                takenByBadgeEmoji: takenInfo != nil ? badgeManager.badges[takenInfo!.memberId] : nil
+            )
+                .padding(.vertical, 4)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+    
+    var body: some View {
+        NavigationStack {
+            mainContent
             .navigationTitle("Select Match")
             .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        isSearchPresented = true
+                    } label: {
+                        Image(systemName: "magnifyingglass")
+                    }
+                }
+            }
+            .sheet(isPresented: $isSearchPresented) {
+                TeamSearchView(
+                    dates: dates,
+                    week: week,
+                    memberSelections: memberSelections,
+                    onSelect: { fixture in
+                        isSearchPresented = false
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                            selectedFixture = fixture
+                        }
+                    },
+                    badgeManager: badgeManager
+                )
+            }
             .fullScreenCover(item: $selectedFixture) { fixture in
                 MarketSelectionView(fixture: fixture) { team, odds, logo in
                     selectMatch(fixture: fixture, team: team, odds: odds, logo: logo)
@@ -354,6 +482,8 @@ struct MatchSelectionView: View {
                     fetchBtts()
                 case .position:
                     fetchPositions()
+                case .predBtts, .predOver25:
+                    fetchPredictions()
                 case .none:
                     break
                 }
@@ -569,6 +699,91 @@ struct MatchSelectionView: View {
                     self.teamBtts[team] = bttsPercentage
                 }
                 self.isFetchingBtts = false
+            }
+        }
+    }
+    
+    private func fetchPredictions() {
+        guard !isFetchingPredictions else { return }
+        isFetchingPredictions = true
+        
+        Task {
+            let competitions = filteredCompetitions
+            let season = APIService.shared.getCurrentSeasonYear(for: selectedDate)
+            
+            // Goals scored / conceded for each team
+            var homeData: [String: (goalsFor: Int, goalsAgainst: Int, played: Int)] = [:]
+            var awayData: [String: (goalsFor: Int, goalsAgainst: Int, played: Int)] = [:]
+            
+            await withTaskGroup(of: [Fixture]?.self) { group in
+                for comp in competitions {
+                    guard let apiId = comp.apiId else { continue }
+                    group.addTask {
+                        do {
+                            return try await APIService.shared.fetchFinishedFixtures(leagueId: apiId, season: season)
+                        } catch {
+                            return nil
+                        }
+                    }
+                }
+                
+                for await result in group {
+                    if let leagueFixtures = result {
+                        for f in leagueFixtures {
+                            if let hg = f.homeGoals, let ag = f.awayGoals {
+                                // Home team stats
+                                homeData[f.homeTeam, default: (0, 0, 0)].goalsFor += hg
+                                homeData[f.homeTeam, default: (0, 0, 0)].goalsAgainst += ag
+                                homeData[f.homeTeam, default: (0, 0, 0)].played += 1
+                                
+                                // Away team stats
+                                awayData[f.awayTeam, default: (0, 0, 0)].goalsFor += ag
+                                awayData[f.awayTeam, default: (0, 0, 0)].goalsAgainst += hg
+                                awayData[f.awayTeam, default: (0, 0, 0)].played += 1
+                            }
+                        }
+                    }
+                }
+            }
+            
+            var bttsResults: [String: Double] = [:]
+            var over25Results: [String: Double] = [:]
+            
+            let allCurrentFixtures = fixtures.values.flatMap { $0 }
+            
+            for fixture in allCurrentFixtures {
+                guard let id = fixture.apiId else { continue }
+                
+                let hStats = homeData[fixture.homeTeam] ?? (0, 0, 0)
+                let aStats = awayData[fixture.awayTeam] ?? (0, 0, 0)
+                
+                guard hStats.played > 0, aStats.played > 0 else { continue }
+                
+                let homeAvgScored = Double(hStats.goalsFor) / Double(hStats.played)
+                let homeAvgConceded = Double(hStats.goalsAgainst) / Double(hStats.played)
+                
+                let awayAvgScored = Double(aStats.goalsFor) / Double(aStats.played)
+                let awayAvgConceded = Double(aStats.goalsAgainst) / Double(aStats.played)
+                
+                let xgHome = (homeAvgScored + awayAvgConceded) / 2.0
+                let xgAway = (awayAvgScored + homeAvgConceded) / 2.0
+                
+                // BTTS 
+                let pBtts = (1.0 - exp(-xgHome)) * (1.0 - exp(-xgAway))
+                bttsResults[String(id)] = pBtts
+                
+                // Over 2.5
+                let lambdaTotal = xgHome + xgAway
+                let pUnder2_5 = exp(-lambdaTotal) * (1.0 + lambdaTotal + (pow(lambdaTotal, 2) / 2.0))
+                let pOver2_5 = 1.0 - pUnder2_5
+                
+                over25Results[String(id)] = pOver2_5
+            }
+            
+            await MainActor.run {
+                self.fixtureBttsPredictions = bttsResults
+                self.fixtureOver25Predictions = over25Results
+                self.isFetchingPredictions = false
             }
         }
     }
@@ -819,6 +1034,8 @@ extension MatchSelectionView {
             case .cleanSheet: return "Percentage of league matches where the team conceded 0 goals."
             case .btts: return "Percentage of league matches where BOTH teams scored at least 1 goal."
             case .position: return "The team's current position in their league standings."
+            case .predBtts: return "Calculated probability that BOTH teams will score based on historic goals."
+            case .predOver25: return "Calculated probability that the match will have over 2.5 total goals."
             }
         }()
 
@@ -835,6 +1052,50 @@ extension MatchSelectionView {
                 Spacer(minLength: 0)
             }
             .padding(.vertical, 4)
+        }
+    }
+    
+    private var sortOptionText: String {
+        switch sortOption {
+        case .league: return "League"
+        case .highToLow: return "High-Low"
+        case .lowToHigh: return "Low-High"
+        }
+    }
+    
+    private func sortValue(for fixture: Fixture) -> Double {
+        switch activePill {
+        case .form:
+            let hForms = teamForms[fixture.homeTeam]
+            let aForms = teamForms[fixture.awayTeam]
+            return Double(pointsForForm(hForms) + pointsForForm(aForms))
+        case .cleanSheet:
+            let h = teamCleanSheets[fixture.homeTeam] ?? 0
+            let a = teamCleanSheets[fixture.awayTeam] ?? 0
+            return Double(h + a) / 2.0
+        case .btts:
+            let h = teamBtts[fixture.homeTeam] ?? 0
+            let a = teamBtts[fixture.awayTeam] ?? 0
+            return Double(h + a) / 2.0
+        case .position:
+            let h = teamPositions[fixture.homeTeam] ?? 99
+            let a = teamPositions[fixture.awayTeam] ?? 99
+            return Double(abs(h - a))
+        case .predBtts:
+            return fixtureBttsPredictions[String(fixture.apiId ?? 0)] ?? 0.0
+        case .predOver25:
+            return fixtureOver25Predictions[String(fixture.apiId ?? 0)] ?? 0.0
+        case .none:
+            return 0.0
+        }
+    }
+    
+    private func pointsForForm(_ form: String?) -> Int {
+        guard let form = form else { return 0 }
+        return form.reduce(0) { sum, char in
+            if char == "W" { return sum + 3 }
+            if char == "D" { return sum + 1 }
+            return sum
         }
     }
 }

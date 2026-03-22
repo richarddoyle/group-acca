@@ -12,6 +12,7 @@
 		42E549D12F5E7E6C00DE991F /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 42E549D02F5E7E6C00DE991F /* SwiftUI.framework */; };
 		42E549E22F5E7E6D00DE991F /* WeeklyAccaWidgetExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 42E549CD2F5E7E6C00DE991F /* WeeklyAccaWidgetExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		4F5545AC461B6FA393BB4482 /* AccaActivityAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1CB4740DF61C17D6FC9F8354 /* AccaActivityAttributes.swift */; };
+		BAF6FA8CF56CAFA5E499ACF5 /* TeamSearchView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C91923D1C948FD52220B9BB9 /* TeamSearchView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -44,6 +45,7 @@
 		42E549CD2F5E7E6C00DE991F /* WeeklyAccaWidgetExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = WeeklyAccaWidgetExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		42E549CE2F5E7E6C00DE991F /* WidgetKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WidgetKit.framework; path = System/Library/Frameworks/WidgetKit.framework; sourceTree = SDKROOT; };
 		42E549D02F5E7E6C00DE991F /* SwiftUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SwiftUI.framework; path = System/Library/Frameworks/SwiftUI.framework; sourceTree = SDKROOT; };
+		C91923D1C948FD52220B9BB9 /* TeamSearchView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = TeamSearchView.swift; path = WeeklyAcca/Views/TeamSearchView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -59,6 +61,8 @@
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		4218E0E72F405CC30022B42F /* WeeklyAcca */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+			);
 			path = WeeklyAcca;
 			sourceTree = "<group>";
 		};
@@ -101,6 +105,7 @@
 				4218E1212F43E7110022B42F /* Frameworks */,
 				4218E0E62F405CC30022B42F /* Products */,
 				1CB4740DF61C17D6FC9F8354 /* AccaActivityAttributes.swift */,
+				C91923D1C948FD52220B9BB9 /* TeamSearchView.swift */,
 			);
 			sourceTree = "<group>";
 		};
@@ -241,6 +246,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				BAF6FA8CF56CAFA5E499ACF5 /* TeamSearchView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

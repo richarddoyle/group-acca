@@ -281,6 +281,26 @@ class APIService {
         return TeamStatistics(apiStats: stats)
     }
     
+    func fetchTopScorers(teamId: Int, season: Int) async throws -> [GoalScorer] {
+        let urlString = "\(baseURL)/players?team=\(teamId)&season=\(season)"
+        guard let url = URL(string: urlString) else { throw URLError(.badURL) }
+        
+        var request = URLRequest(url: url)
+        request.addValue(apiKey, forHTTPHeaderField: "x-apisports-key")
+        
+        let (data, _) = try await URLSession.shared.data(for: request)
+        let response = try JSONDecoder().decode(APIPlayerStatsResponse.self, from: data)
+        
+        let scorers = response.response.map { GoalScorer(apiWrapper: $0) }
+        
+        let topScorers = scorers
+            .filter { $0.goals > 0 }
+            .sorted { $0.goals > $1.goals }
+            .prefix(3)
+            
+        return Array(topScorers)
+    }
+    
     private func parseDate(_ dateString: String) -> Date {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds] 
@@ -598,7 +618,11 @@ struct TeamStatistics {
     
     // Goals Average
     let avgGoalsScoredTotal: String
+    let avgGoalsScoredHome: String
+    let avgGoalsScoredAway: String
     let avgGoalsConcededTotal: String
+    let avgGoalsConcededHome: String
+    let avgGoalsConcededAway: String
     
     init(apiStats: APITeamStatistics) {
         self.form = apiStats.form ?? ""
@@ -620,7 +644,11 @@ struct TeamStatistics {
         self.failedToScoreAway = apiStats.failed_to_score.away
         
         self.avgGoalsScoredTotal = apiStats.goals.`for`.average.total
+        self.avgGoalsScoredHome = apiStats.goals.`for`.average.home
+        self.avgGoalsScoredAway = apiStats.goals.`for`.average.away
         self.avgGoalsConcededTotal = apiStats.goals.against.average.total
+        self.avgGoalsConcededHome = apiStats.goals.against.average.home
+        self.avgGoalsConcededAway = apiStats.goals.against.average.away
     }
     
     var winPercentage: Double { guard playedTotal > 0 else { return 0 }; return Double(winsTotal) / Double(playedTotal) }
@@ -728,5 +756,44 @@ struct Injury: Identifiable {
         self.teamId = apiInjury.team.id
         self.teamName = apiInjury.team.name
         self.teamLogo = apiInjury.team.logo
+    }
+}
+
+// MARK: - Top Scorers Models
+
+struct APIPlayerStatsResponse: Codable {
+    let response: [APIPlayerStatsWrapper]
+}
+
+struct APIPlayerStatsWrapper: Codable {
+    let player: APIFootballPlayer
+    let statistics: [APIFootballPlayerStats]
+}
+
+struct APIFootballPlayer: Codable {
+    let id: Int
+    let name: String
+    let photo: String?
+}
+
+struct APIFootballPlayerStats: Codable {
+    let goals: APIFootballGoals
+}
+
+struct APIFootballGoals: Codable {
+    let total: Int?
+}
+
+struct GoalScorer: Identifiable {
+    let id: Int
+    let name: String
+    let photo: String?
+    let goals: Int
+    
+    init(apiWrapper: APIPlayerStatsWrapper) {
+        self.id = apiWrapper.player.id
+        self.name = apiWrapper.player.name
+        self.photo = apiWrapper.player.photo
+        self.goals = apiWrapper.statistics.first?.goals.total ?? 0
     }
 }

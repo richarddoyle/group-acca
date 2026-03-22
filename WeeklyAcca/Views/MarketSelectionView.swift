@@ -29,6 +29,11 @@ struct MarketSelectionView: View {
     @State private var memberSelections: [MemberSelectionDisplay] = []
     
     @State private var scrollOffset: CGFloat = 0
+    @State private var myOpenWeeks: [Week] = []
+    @State private var myMemberships: [Member] = []
+    @State private var showingAddToAccaFlow = false
+    @State private var homeTopScorers: [GoalScorer] = []
+    @State private var awayTopScorers: [GoalScorer] = []
     
     // Dynamically generated based on read-only state and match status
     private var tabs: [TopTab] {
@@ -43,6 +48,8 @@ struct MarketSelectionView: View {
             availableTabs.append(.details)
         }
         
+        availableTabs.append(.stats)
+        
         if fixture.isKnockout {
             availableTabs.append(.bracket)
         } else {
@@ -54,11 +61,8 @@ struct MarketSelectionView: View {
         }
         
         availableTabs.append(.injuries)
-        availableTabs.append(.stats)
         
-        if !memberSelections.isEmpty {
-            availableTabs.append(.acca)
-        }
+        availableTabs.append(.acca)
         
         return availableTabs
     }
@@ -166,6 +170,17 @@ struct MarketSelectionView: View {
         .toolbar(.hidden, for: .tabBar)
         .task {
             await loadMatchData()
+        }
+        .sheet(isPresented: $showingAddToAccaFlow) {
+            AddToAccaSheet(
+                fixture: fixture,
+                openWeeks: myOpenWeeks,
+                memberships: myMemberships,
+                onComplete: {
+                    showingAddToAccaFlow = false
+                    Task { await loadMatchData() }
+                }
+            )
         }
     }
     
@@ -731,26 +746,159 @@ struct MarketSelectionView: View {
                 .padding()
         } else if let home = homeStats, let away = awayStats {
             VStack(spacing: 24) {
+                // Group Acca Predicts
+                if let (xgHome, xgAway) = calculateXG(home: home, away: away) {
+                    marketSection(title: "Group Acca Predicts") {
+                        VStack(spacing: 0) {
+                            let probs = calculateMatchProbabilities(xgHome: xgHome, xgAway: xgAway)
+                            VStack(spacing: 12) {
+                                Text("Match Result Prediction")
+                                    .font(.subheadline.bold())
+                                    .foregroundStyle(.primary)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                
+                                HStack(spacing: 8) {
+                                    VStack(spacing: 4) {
+                                        Text(fixture.homeTeam)
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                            .lineLimit(1)
+                                        Text("\(Int(probs.homeWin * 100))%")
+                                            .font(.headline)
+                                            .foregroundStyle(Color.accentColor)
+                                    }
+                                    .frame(maxWidth: .infinity)
+                                    
+                                    VStack(spacing: 4) {
+                                        Text("Draw")
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                            .lineLimit(1)
+                                        Text("\(Int(probs.draw * 100))%")
+                                            .font(.headline)
+                                            .foregroundStyle(Color.accentColor)
+                                    }
+                                    .frame(maxWidth: .infinity)
+                                    
+                                    VStack(spacing: 4) {
+                                        Text(fixture.awayTeam)
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                            .lineLimit(1)
+                                        Text("\(Int(probs.awayWin * 100))%")
+                                            .font(.headline)
+                                            .foregroundStyle(Color.accentColor)
+                                    }
+                                    .frame(maxWidth: .infinity)
+                                }
+                            }
+                            .padding(.horizontal)
+                            .padding(.vertical, 12)
+                            
+                            Divider()
+                            
+                            let matchBttsProb = (1.0 - exp(-xgHome)) * (1.0 - exp(-xgAway))
+                            HStack {
+                                Text("Match BTTS Prediction")
+                                    .font(.subheadline.bold())
+                                    .foregroundStyle(.primary)
+                                Spacer()
+                                Text("\(Int(matchBttsProb * 100))%")
+                                    .font(.headline)
+                                    .foregroundStyle(Color.accentColor)
+                            }
+                            .padding(.horizontal)
+                            .padding(.vertical, 12)
+                            
+                            Divider()
+                            let lambdaTotal = xgHome + xgAway
+                            let p0 = exp(-lambdaTotal)
+                            let p1 = p0 * lambdaTotal
+                            let p2 = p1 * lambdaTotal / 2.0
+                            let p3 = p2 * lambdaTotal / 3.0
+                            
+                            let pUnder1_5 = p0 + p1
+                            let matchOver15Prob = 1.0 - pUnder1_5
+                            
+                            let pUnder2_5 = pUnder1_5 + p2
+                            let matchOver25Prob = 1.0 - pUnder2_5
+                            
+                            let pUnder3_5 = pUnder2_5 + p3
+                            let matchOver35Prob = 1.0 - pUnder3_5
+                            
+                            HStack {
+                                Text("Over 1.5 Goals Prediction")
+                                    .font(.subheadline.bold())
+                                    .foregroundStyle(.primary)
+                                Spacer()
+                                Text("\(Int(matchOver15Prob * 100))%")
+                                    .font(.headline)
+                                    .foregroundStyle(Color.accentColor)
+                            }
+                            .padding(.horizontal)
+                            .padding(.vertical, 12)
+                            
+                            Divider()
+                            
+                            HStack {
+                                Text("Over 2.5 Goals Prediction")
+                                    .font(.subheadline.bold())
+                                    .foregroundStyle(.primary)
+                                Spacer()
+                                Text("\(Int(matchOver25Prob * 100))%")
+                                    .font(.headline)
+                                    .foregroundStyle(Color.accentColor)
+                            }
+                            .padding(.horizontal)
+                            .padding(.vertical, 12)
+                            
+                            Divider()
+                            
+                            HStack {
+                                Text("Over 3.5 Goals Prediction")
+                                    .font(.subheadline.bold())
+                                    .foregroundStyle(.primary)
+                                Spacer()
+                                Text("\(Int(matchOver35Prob * 100))%")
+                                    .font(.headline)
+                                    .foregroundStyle(Color.accentColor)
+                            }
+                            .padding(.horizontal)
+                            .padding(.vertical, 12)
+                        }
+                        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16))
+                        .shadow(color: .black.opacity(0.05), radius: 5, x: 0, y: 2)
+                    }
+                }
+                
                 // Recent Form
                 marketSection(title: "Recent Form") {
-                    HStack(spacing: 16) {
-                        TeamFormView(
-                            teamName: fixture.homeTeam,
-                            recentFixtures: recentHomeFixtures,
-                            isHome: true
-                        )
+                    VStack(spacing: 0) {
+                        HStack(spacing: 16) {
+                            TeamFormView(
+                                teamName: fixture.homeTeam,
+                                recentFixtures: recentHomeFixtures,
+                                isHome: true
+                            )
+                            
+                            Text("-")
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                            
+                            TeamFormView(
+                                teamName: fixture.awayTeam,
+                                recentFixtures: recentAwayFixtures,
+                                isHome: false
+                            )
+                        }
+                        .padding()
                         
-                        Text("-")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                        
-                        TeamFormView(
-                            teamName: fixture.awayTeam,
-                            recentFixtures: recentAwayFixtures,
-                            isHome: false
-                        )
+                        // Fleshed out Form Metrics
+                        if !standings.isEmpty {
+                            formMetricsView(homePts: standings.first(where: { $0.teamName == fixture.homeTeam })?.points ?? 0,
+                                            awayPts: standings.first(where: { $0.teamName == fixture.awayTeam })?.points ?? 0)
+                        }
                     }
-                    .padding()
                     .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16))
                     .shadow(color: .black.opacity(0.05), radius: 5, x: 0, y: 2)
                 }
@@ -763,28 +911,46 @@ struct MarketSelectionView: View {
                     )
                 }
                 
-                // Average Goals Scored
-                marketSection(title: "Average Goals Scored / Match") {
-                    statRowWithLogos(
-                        homeVal: home.avgGoalsScoredTotal,
-                        awayVal: away.avgGoalsScoredTotal
-                    )
-                }
-                
-                // Average Goals Conceded
-                marketSection(title: "Average Goals Conceded / Match") {
-                    statRowWithLogos(
-                        homeVal: home.avgGoalsConcededTotal,
-                        awayVal: away.avgGoalsConcededTotal
-                    )
-                }
-                
-                // Both Teams To Score
-                marketSection(title: "Both Teams To Score") {
-                    statRowWithLogos(
-                        homeVal: homeBttsPercentage != nil ? "\(Int(homeBttsPercentage! * 100))%" : "--%",
-                        awayVal: awayBttsPercentage != nil ? "\(Int(awayBttsPercentage! * 100))%" : "--%"
-                    )
+                // Goals Stats
+                marketSection(title: "Goals Stats") {
+                    VStack(spacing: 0) {
+                        // Header with Logos
+                        HStack(spacing: 16) {
+                            ClubBadge(url: fixture.homeLogoUrl, size: 24)
+                            Spacer()
+                            ClubBadge(url: fixture.awayLogoUrl, size: 24)
+                        }
+                        .padding(.horizontal)
+                        .padding(.bottom, 8)
+                        
+                        Divider()
+                        
+                        // Goals Scored
+                        statRowWithLabel(homeVal: home.avgGoalsScoredTotal, awayVal: away.avgGoalsScoredTotal, label: "Scored / Game")
+                        Divider()
+                        statRowWithLabel(homeVal: home.avgGoalsScoredHome, awayVal: away.avgGoalsScoredHome, label: "Scored (Home)")
+                        Divider()
+                        statRowWithLabel(homeVal: home.avgGoalsScoredAway, awayVal: away.avgGoalsScoredAway, label: "Scored (Away)")
+                        Divider()
+                        
+                        // Goals Conceded
+                        statRowWithLabel(homeVal: home.avgGoalsConcededTotal, awayVal: away.avgGoalsConcededTotal, label: "Conceded / Game")
+                        Divider()
+                        statRowWithLabel(homeVal: home.avgGoalsConcededHome, awayVal: away.avgGoalsConcededHome, label: "Conceded (Home)")
+                        Divider()
+                        statRowWithLabel(homeVal: home.avgGoalsConcededAway, awayVal: away.avgGoalsConcededAway, label: "Conceded (Away)")
+                        Divider()
+                        
+                        // BTTS (Historic)
+                        statRowWithLabel(
+                            homeVal: homeBttsPercentage != nil ? "\(Int(homeBttsPercentage! * 100))%" : "--%",
+                            awayVal: awayBttsPercentage != nil ? "\(Int(awayBttsPercentage! * 100))%" : "--%",
+                            label: "BTTS (Historic %)"
+                        )
+                        
+                    }
+                    .padding()
+                    .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16))
                 }
                 
                 // Clean Sheets (Overall)
@@ -817,6 +983,27 @@ struct MarketSelectionView: View {
                         homeVal: "\(Int(home.homeFailedToScorePercentage * 100))%",
                         awayVal: "\(Int(away.awayFailedToScorePercentage * 100))%"
                     )
+                }
+                
+                // Top Scorers
+                if !homeTopScorers.isEmpty || !awayTopScorers.isEmpty {
+                    marketSection(title: "Top Goalscorers") {
+                        VStack(spacing: 16) {
+                            if !homeTopScorers.isEmpty {
+                                TopScorersView(teamName: fixture.homeTeam, scorers: homeTopScorers, injuries: injuries)
+                            }
+                            
+                            if !homeTopScorers.isEmpty && !awayTopScorers.isEmpty {
+                                Divider()
+                            }
+                            
+                            if !awayTopScorers.isEmpty {
+                                TopScorersView(teamName: fixture.awayTeam, scorers: awayTopScorers, injuries: injuries)
+                            }
+                        }
+                        .padding()
+                        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16))
+                    }
                 }
             }
             .padding(.top, 8)
@@ -851,37 +1038,144 @@ struct MarketSelectionView: View {
         .shadow(color: .black.opacity(0.05), radius: 5, x: 0, y: 2)
     }
     
+    private func statRowWithLabel(homeVal: String, awayVal: String, label: String) -> some View {
+        HStack(spacing: 8) {
+            Text(homeVal)
+                .font(.headline)
+                .frame(maxWidth: .infinity, alignment: .trailing)
+            
+            Text(label)
+                .font(.caption2.bold())
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .frame(width: 110)
+            
+            Text(awayVal)
+                .font(.headline)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(.vertical, 8)
+    }
+    
+    private func calculateXG(home: TeamStatistics, away: TeamStatistics) -> (Double, Double)? {
+        guard let homeAvgScoredHome = Double(home.avgGoalsScoredHome),
+              let awayAvgConcededAway = Double(away.avgGoalsConcededAway),
+              let awayAvgScoredAway = Double(away.avgGoalsScoredAway),
+              let homeAvgConcededHome = Double(home.avgGoalsConcededHome) else {
+            return nil
+        }
+        
+        let xgHome = (homeAvgScoredHome + awayAvgConcededAway) / 2.0
+        let xgAway = (awayAvgScoredAway + homeAvgConcededHome) / 2.0
+        
+        return (xgHome, xgAway)
+    }
+    
+    private func calculateMatchProbabilities(xgHome: Double, xgAway: Double) -> (homeWin: Double, draw: Double, awayWin: Double) {
+        var homeWin = 0.0
+        var draw = 0.0
+        var awayWin = 0.0
+        
+        let maxGoals = 8
+        for h in 0...maxGoals {
+            for a in 0...maxGoals {
+                let probHome = exp(-xgHome) * pow(xgHome, Double(h)) / Double(factorial(h))
+                let probAway = exp(-xgAway) * pow(xgAway, Double(a)) / Double(factorial(a))
+                let prob = probHome * probAway
+                
+                if h > a {
+                    homeWin += prob
+                } else if h == a {
+                    draw += prob
+                } else {
+                    awayWin += prob
+                }
+            }
+        }
+        
+        let total = homeWin + draw + awayWin
+        guard total > 0 else { return (0.33, 0.34, 0.33) }
+        return (homeWin / total, draw / total, awayWin / total)
+    }
+    
+    private func factorial(_ n: Int) -> Int {
+        if n == 0 { return 1 }
+        return (1...n).reduce(1, *)
+    }
+    
     // MARK: - Acca Tab View
     
     @ViewBuilder
     private var accaTab: some View {
-        if memberSelections.isEmpty {
-            Text("No members have picked this match.")
-                .foregroundStyle(.secondary)
-                .padding()
-        } else {
-            VStack(spacing: 0) {
-                ForEach(memberSelections) { memberSelection in
-                    ForEach(memberSelection.selections, id: \.id) { selection in
-                        SelectionRow(
-                            selection: selection,
-                            memberName: memberSelection.member.name,
-                            avatarUrl: memberSelection.avatarUrl,
-                            isLocked: true // Read-only view in this context
-                        )
-                        .padding(.vertical, 12)
-                        .padding(.horizontal, 16)
+        VStack(spacing: 16) {
+            let hasMadePick = memberSelections.contains { $0.member.userId == SupabaseService.shared.currentUserId }
+            
+            if !hasMadePick {
+                if myOpenWeeks.isEmpty {
+                    VStack(spacing: 12) {
+                        Image(systemName: "plus.circle")
+                            .font(.largeTitle)
+                            .foregroundStyle(.secondary)
+                        Text("No active Accas available.")
+                            .font(.headline)
+                        Text("Go to My Groups to create one.")
+                            .foregroundStyle(.secondary)
+                            .font(.subheadline)
+                        Button("Dismiss") {
+                            dismiss()
+                        }
+                        .buttonStyle(.bordered)
+                        .tint(.accentColor)
+                    }
+                    .padding()
+                    .frame(maxWidth: .infinity)
+                    .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 12))
+                    .padding(.horizontal)
+                } else {
+                    VStack(spacing: 12) {
+                        Text("Add this match to your Acca!")
+                            .font(.headline)
                         
-                        if selection != memberSelection.selections.last || memberSelection.id != memberSelections.last?.id {
-                            Divider()
-                                .padding(.leading, 64)
+                        Button("Make a Pick") {
+                            showingAddToAccaFlow = true
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(.accentColor)
+                    }
+                    .padding()
+                    .frame(maxWidth: .infinity)
+                    .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 12))
+                    .padding(.horizontal)
+                }
+            }
+            
+            if !memberSelections.isEmpty {
+                VStack(spacing: 0) {
+                    ForEach(memberSelections) { memberSelection in
+                        ForEach(memberSelection.selections, id: \.id) { selection in
+                            SelectionRow(
+                                selection: selection,
+                                memberName: memberSelection.member.name,
+                                avatarUrl: memberSelection.avatarUrl,
+                                isLocked: true // Read-only view in this context
+                            )
+                            .padding(.vertical, 12)
+                            .padding(.horizontal, 16)
+                            
+                            if selection != memberSelection.selections.last || memberSelection.id != memberSelections.last?.id {
+                                Divider()
+                                    .padding(.leading, 64)
+                            }
                         }
                     }
                 }
+                .background(Color(.systemBackground), in: RoundedRectangle(cornerRadius: 12))
+                .padding(.horizontal)
+            } else if hasMadePick {
+                // Edge case where selection was just added but memberSelections hasn't fetched properly
             }
-            .background(Color(.systemBackground), in: RoundedRectangle(cornerRadius: 12))
-            .padding(.horizontal)
         }
+        .padding(.vertical, 8)
     }
     
     // MARK: - Data Fetching
@@ -932,6 +1226,8 @@ struct MarketSelectionView: View {
             var fetchedAwayFixtures: [Fixture] = []
             var fetchedHomeBtts: Double? = nil
             var fetchedAwayBtts: Double? = nil
+            var fetchedHomeScorers: [GoalScorer] = []
+            var fetchedAwayScorers: [GoalScorer] = []
             
             if let leagueId = fixture.competition.apiId {
                 // Try fetch standings
@@ -954,11 +1250,15 @@ struct MarketSelectionView: View {
                     async let homeRecentTask = APIService.shared.fetchTeamRecentFixtures(teamId: homeTeamId)
                     async let awayRecentTask = APIService.shared.fetchTeamRecentFixtures(teamId: awayTeamId)
                     async let fullLeagueTask = APIService.shared.fetchFinishedFixtures(leagueId: leagueId, season: season)
+                    async let homeScorersTask = APIService.shared.fetchTopScorers(teamId: homeTeamId, season: season)
+                    async let awayScorersTask = APIService.shared.fetchTopScorers(teamId: awayTeamId, season: season)
                     
                     if let home = try? await homeStatsTask { fetchedHomeStats = home }
                     if let away = try? await awayStatsTask { fetchedAwayStats = away }
                     if let homeF = try? await homeRecentTask { fetchedHomeFixtures = homeF }
                     if let awayF = try? await awayRecentTask { fetchedAwayFixtures = awayF }
+                    if let hs = try? await homeScorersTask { fetchedHomeScorers = hs }
+                    if let asco = try? await awayScorersTask { fetchedAwayScorers = asco }
                     if let fullFixtures = try? await fullLeagueTask {
                         var homePlayed = 0
                         var homeBttsCount = 0
@@ -997,6 +1297,8 @@ struct MarketSelectionView: View {
             let finalAwayFixtures = fetchedAwayFixtures
             let finalHomeBtts = fetchedHomeBtts
             let finalAwayBtts = fetchedAwayBtts
+            let finalHomeScorers = fetchedHomeScorers
+            let finalAwayScorers = fetchedAwayScorers
             
             await MainActor.run {
                 self.matchEvents = finalEvents.sorted(by: { $0.elapsed > $1.elapsed }) // Newest first
@@ -1009,6 +1311,8 @@ struct MarketSelectionView: View {
                 self.recentAwayFixtures = finalAwayFixtures
                 self.homeBttsPercentage = finalHomeBtts
                 self.awayBttsPercentage = finalAwayBtts
+                self.homeTopScorers = finalHomeScorers
+                self.awayTopScorers = finalAwayScorers
             }
             
             // Try fetching active member picks for this fixture
@@ -1021,6 +1325,17 @@ struct MarketSelectionView: View {
                 await MainActor.run {
                     self.memberSelections = selections
                 }
+            }
+            
+            // Fetch user's open weeks and memberships
+            let userId = SupabaseService.shared.currentUserId
+            let allWeeks = (try? await SupabaseService.shared.fetchAllMyWeeks(userId: userId)) ?? []
+            let openWeeks = allWeeks.filter { $0.isOpen && $0.status == .pending }
+            let memberships = (try? await SupabaseService.shared.fetchMyMemberships(userId: userId)) ?? []
+            
+            await MainActor.run {
+                self.myOpenWeeks = openWeeks
+                self.myMemberships = memberships
             }
             
             await MainActor.run {
@@ -1048,6 +1363,62 @@ struct MarketSelectionView: View {
         }
         .padding(.horizontal)
         .padding(.top, 8)
+    }
+    
+    private func ordinal(_ number: Int) -> String {
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .ordinal
+        return formatter.string(from: NSNumber(value: number)) ?? "\(number)"
+    }
+    
+    private func pointsForForm(_ formStr: String?) -> Int {
+        guard let form = formStr else { return 0 }
+        return form.reduce(0) { total, char in
+            switch char {
+            case "W": return total + 3
+            case "D": return total + 1
+            default: return total
+            }
+        }
+    }
+    
+    @ViewBuilder
+    private func formMetricsView(homePts: Int, awayPts: Int) -> some View {
+        Divider()
+        
+        let sortedByForm = standings.sorted {
+            pointsForForm($0.form) > pointsForForm($1.form)
+        }
+        
+        let homeFormRank = (sortedByForm.firstIndex(where: { $0.teamName == fixture.homeTeam }) ?? 99) + 1
+        let awayFormRank = (sortedByForm.firstIndex(where: { $0.teamName == fixture.awayTeam }) ?? 99) + 1
+        
+        statRowWithLabel(
+            homeVal: homeFormRank <= standings.count ? ordinal(homeFormRank) : "-",
+            awayVal: awayFormRank <= standings.count ? ordinal(awayFormRank) : "-",
+            label: "Form Table Rank"
+        )
+        
+        Divider()
+        
+        statRowWithLabel(
+            homeVal: "\(homePts)",
+            awayVal: "\(awayPts)",
+            label: "Current Points"
+        )
+        
+        Divider()
+        
+        let hPlayed = max(standings.first(where: { $0.teamName == fixture.homeTeam })?.played ?? 1, 1)
+        let aPlayed = max(standings.first(where: { $0.teamName == fixture.awayTeam })?.played ?? 1, 1)
+        let homeExp = Int(round((Double(homePts) / Double(hPlayed)) * 38))
+        let awayExp = Int(round((Double(awayPts) / Double(aPlayed)) * 38))
+        
+        statRowWithLabel(
+            homeVal: "\(homeExp)",
+            awayVal: "\(awayExp)",
+            label: "Expected Points"
+        )
     }
     
     private var resultMarket: some View {
@@ -1194,5 +1565,291 @@ struct TeamFormView: View {
             .padding(.vertical, 4)
             .background(bgColor, in: RoundedRectangle(cornerRadius: 6))
             .frame(width: 55) // Fixed width for alignment
+    }
+}
+
+// MARK: - TopScorersView
+
+struct TopScorersView: View {
+    let teamName: String
+    let scorers: [GoalScorer]
+    let injuries: [Injury]
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(teamName)
+                .font(.subheadline.bold())
+                .foregroundStyle(.secondary)
+            
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 24) {
+                    ForEach(scorers) { scorer in
+                        let isUnavailable = injuries.contains { injury in
+                            // api-football player names often match partially or fully.
+                            // For simplicity, we check if the injury name contains the scorer name 
+                            // or vice versa, or just equality.
+                            injury.playerName.lowercased().contains(scorer.name.lowercased()) || scorer.name.lowercased().contains(injury.playerName.lowercased())
+                        }
+                        
+                        VStack(spacing: 6) {
+                            ZStack(alignment: .topTrailing) {
+                                AsyncImage(url: URL(string: scorer.photo ?? "")) { image in
+                                    image.resizable().scaledToFill()
+                                } placeholder: {
+                                    Circle().fill(Color.gray.opacity(0.3))
+                                }
+                                .frame(width: 55, height: 55)
+                                .clipShape(Circle())
+                                .overlay(Circle().stroke(Color.secondary.opacity(0.2), lineWidth: 1))
+                                
+                                if isUnavailable {
+                                    Image(systemName: "cross.circle.fill")
+                                        .resizable()
+                                        .frame(width: 18, height: 18)
+                                        .foregroundStyle(.white, .red)
+                                        .background(Circle().fill(.white))
+                                        .offset(x: 4, y: -4)
+                                }
+                            }
+                            
+                            // Get the last word (usually surname) to fit the UI nicely
+                            Text(scorer.name.split(separator: " ").last ?? String.SubSequence(scorer.name))
+                                .font(.caption)
+                                .fontWeight(.medium)
+                                .lineLimit(1)
+                                .frame(maxWidth: 70)
+                            
+                            Text("\(scorer.goals) Goals")
+                                .font(.caption2.bold())
+                                .foregroundStyle(Color.accentColor)
+                        }
+                    }
+                }
+                .padding(.horizontal, 4)
+                .padding(.vertical, 4)
+            }
+        }
+    }
+}
+
+// MARK: - AddToAccaSheet
+
+struct AddToAccaSheet: View {
+    let fixture: Fixture
+    let openWeeks: [Week]
+    let memberships: [Member]
+    let onComplete: () -> Void
+    @Environment(\.dismiss) private var dismiss
+    
+    @State private var selectedTeam: String?
+    @State private var selectedOdds: Double?
+    @State private var selectedLogo: String?
+    @State private var isSaving = false
+    @State private var errorMessage: String?
+    
+    var body: some View {
+        NavigationStack {
+            Group {
+                if isSaving {
+                    VStack(spacing: 16) {
+                        ProgressView()
+                        Text("Saving Pick...")
+                            .foregroundStyle(.secondary)
+                    }
+                } else if selectedTeam == nil {
+                    ScrollView {
+                        VStack(spacing: 24) {
+                            if let error = errorMessage {
+                                Text(error)
+                                    .foregroundStyle(.red)
+                                    .padding()
+                            }
+                            marketSection(title: "Match Result") { resultMarket }
+                            marketSection(title: "Both Teams To Score") { bttsMarket }
+                            marketSection(title: "Total Goals") { totalGoalsMarket }
+                        }
+                        .padding(.vertical)
+                    }
+                    .background(Color(.systemGroupedBackground))
+                    .navigationTitle("Select Market")
+                } else {
+                    List(openWeeks) { week in
+                        Button {
+                            savePick(to: week)
+                        } label: {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(week.title)
+                                    .font(.headline)
+                                    .foregroundStyle(.primary)
+                                Text("Adding: \(selectedTeam!)")
+                                    .font(.subheadline)
+                                    .foregroundStyle(Color.accentColor)
+                            }
+                        }
+                    }
+                    .navigationTitle("Select Acca")
+                }
+            }
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+                
+                if selectedTeam != nil && !isSaving {
+                    ToolbarItem(placement: .topBarLeading) {
+                        Button("Back") {
+                            withAnimation {
+                                selectedTeam = nil
+                                selectedOdds = nil
+                                selectedLogo = nil
+                                errorMessage = nil
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    // MARK: - Save Logic
+    
+    private func savePick(to week: Week) {
+        guard let team = selectedTeam, let odds = selectedOdds else { return }
+        guard let member = memberships.first(where: { $0.groupId == week.groupId }) else {
+            errorMessage = "Membership not found for this Group."
+            return
+        }
+        
+        isSaving = true
+        errorMessage = nil
+        
+        Task {
+            do {
+                // Pre-flight check
+                let existingPicks = try await SupabaseService.shared.fetchSelections(weekId: week.id)
+                
+                // Has this user already picked this fixture?
+                let userPicksForFixture = existingPicks.filter { $0.memberId == member.id && $0.fixtureId == fixture.apiId }
+                if !userPicksForFixture.isEmpty {
+                    await MainActor.run {
+                        isSaving = false
+                        errorMessage = "You have already picked this match!"
+                    }
+                    return
+                }
+                
+                // Has this user hit the max picks limit?
+                let userPicksTotal = existingPicks.filter { $0.memberId == member.id }
+                if let maxPicks = week.maxPicksPerMember, userPicksTotal.count >= maxPicks {
+                    await MainActor.run {
+                        isSaving = false
+                        errorMessage = "You have reached the maximum picks (\(maxPicks)) for this Acca!"
+                    }
+                    return
+                }
+                
+                let selection = Selection(
+                    id: UUID(),
+                    accaId: week.id,
+                    memberId: member.id,
+                    teamName: team,
+                    league: fixture.competition.name,
+                    outcome: .pending,
+                    odds: odds,
+                    kickoffTime: fixture.date,
+                    matchStatus: fixture.status,
+                    teamLogoUrl: selectedLogo,
+                    homeTeamName: fixture.homeTeam,
+                    awayTeamName: fixture.awayTeam,
+                    fixtureId: fixture.apiId,
+                    homeTeamLogoUrl: fixture.homeLogoUrl,
+                    awayTeamLogoUrl: fixture.awayLogoUrl
+                )
+                
+                try await SupabaseService.shared.saveSelection(selection)
+                await MainActor.run {
+                    onComplete()
+                }
+            } catch {
+                await MainActor.run {
+                    isSaving = false
+                    errorMessage = "Failed to save: \(error.localizedDescription)"
+                }
+            }
+        }
+    }
+    
+    // MARK: - Market Views (Simplified)
+    
+    private func marketSection<Content: View>(title: String, @ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title)
+                .font(.headline)
+                .textCase(nil)
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 16)
+                .padding(.bottom, 2)
+            
+            content()
+        }
+        .padding(.horizontal)
+    }
+    
+    private var resultMarket: some View {
+        VStack(spacing: 0) {
+            marketOption(label: "\(fixture.homeTeam) Win", odds: fixture.odds.home, team: fixture.homeTeam, logo: fixture.homeLogoUrl)
+            Divider().padding(.leading)
+            marketOption(label: "Draw", odds: fixture.odds.draw, team: "Draw", logo: fixture.homeLogoUrl)
+            Divider().padding(.leading)
+            marketOption(label: "\(fixture.awayTeam) Win", odds: fixture.odds.away, team: fixture.awayTeam, logo: fixture.awayLogoUrl)
+        }
+        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 10))
+    }
+    
+    private var bttsMarket: some View {
+        VStack(spacing: 0) {
+            if let yes = fixture.odds.bttsYes, let no = fixture.odds.bttsNo {
+                marketOption(label: "BTTS - Yes", odds: yes, team: "BTTS - Yes", logo: fixture.homeLogoUrl)
+                Divider().padding(.leading)
+                marketOption(label: "BTTS - No", odds: no, team: "BTTS - No", logo: fixture.homeLogoUrl)
+            } else {
+                Text("Markets not available for this match").foregroundStyle(.secondary).padding()
+            }
+        }
+        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 10))
+    }
+    
+    private var totalGoalsMarket: some View {
+        VStack(spacing: 0) {
+            if let over = fixture.odds.over25, let under = fixture.odds.under25 {
+                marketOption(label: "Over 2.5 Goals", odds: over, team: "Over 2.5 Goals", logo: fixture.homeLogoUrl)
+                Divider().padding(.leading)
+                marketOption(label: "Under 2.5 Goals", odds: under, team: "Under 2.5 Goals", logo: fixture.homeLogoUrl)
+            } else {
+                Text("Markets not available for this match").foregroundStyle(.secondary).padding()
+            }
+        }
+        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 10))
+    }
+    
+    private func marketOption(label: String, odds: Double, team: String, logo: String?) -> some View {
+        Button {
+            withAnimation {
+                selectedTeam = team
+                selectedOdds = odds
+                selectedLogo = logo
+            }
+        } label: {
+            HStack {
+                Text(label).font(.body).foregroundStyle(.primary)
+                Spacer()
+                Text(odds.formatted()).font(.body).foregroundStyle(Color.accentColor)
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 }
