@@ -301,6 +301,27 @@ class APIService {
         return Array(topScorers)
     }
     
+    func fetchTeamVenue(teamId: Int) async throws -> Venue? {
+        let urlString = "\(baseURL)/teams?id=\(teamId)"
+        guard let url = URL(string: urlString) else { throw URLError(.badURL) }
+        
+        var request = URLRequest(url: url)
+        request.addValue(apiKey, forHTTPHeaderField: "x-apisports-key")
+        
+        let (data, _) = try await URLSession.shared.data(for: request)
+        let response = try JSONDecoder().decode(APITeamVenueResponse.self, from: data)
+        
+        guard let venueAPI = response.response.first?.venue, 
+              let id = venueAPI.id,
+              let name = venueAPI.name,
+              let city = venueAPI.city,
+              let capacity = venueAPI.capacity else {
+            return nil
+        }
+        
+        return Venue(id: id, name: name, city: city, capacity: capacity, image: venueAPI.image)
+    }
+    
     private func parseDate(_ dateString: String) -> Date {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds] 
@@ -794,6 +815,26 @@ struct GoalScorer: Identifiable {
         self.id = apiWrapper.player.id
         self.name = apiWrapper.player.name
         self.photo = apiWrapper.player.photo
-        self.goals = apiWrapper.statistics.first?.goals.total ?? 0
+        self.goals = apiWrapper.statistics.compactMap { $0.goals.total }.reduce(0, +)
     }
+}
+
+// MARK: - Team Venue API Models
+struct APITeamVenueResponse: Codable {
+    let response: [APITeamVenueItem]
+}
+
+struct APITeamVenueItem: Codable {
+    let team: APITeam
+    let venue: APIVenueDetail
+}
+
+struct APIVenueDetail: Codable {
+    let id: Int?
+    let name: String?
+    let address: String?
+    let city: String?
+    let capacity: Int?
+    let surface: String?
+    let image: String?
 }

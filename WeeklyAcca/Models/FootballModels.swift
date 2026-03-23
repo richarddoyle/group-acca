@@ -75,4 +75,10 @@ struct Fixture: Identifiable, Hashable, Sendable {
     }
 }
 
-
+struct Venue: Identifiable, Hashable, Sendable {
+    let id: Int
+    let name: String
+    let city: String
+    let capacity: Int
+    let image: String?
+}

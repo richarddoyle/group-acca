@@ -34,6 +34,7 @@ struct MarketSelectionView: View {
     @State private var showingAddToAccaFlow = false
     @State private var homeTopScorers: [GoalScorer] = []
     @State private var awayTopScorers: [GoalScorer] = []
+    @State private var matchVenue: Venue? = nil
     
     // Dynamically generated based on read-only state and match status
     private var tabs: [TopTab] {
@@ -50,6 +51,8 @@ struct MarketSelectionView: View {
         
         availableTabs.append(.stats)
         
+        availableTabs.append(.acca)
+        
         if fixture.isKnockout {
             availableTabs.append(.bracket)
         } else {
@@ -61,8 +64,6 @@ struct MarketSelectionView: View {
         }
         
         availableTabs.append(.injuries)
-        
-        availableTabs.append(.acca)
         
         return availableTabs
     }
@@ -390,43 +391,114 @@ struct MarketSelectionView: View {
     
     @ViewBuilder
     private var gameDetailsTab: some View {
-        if matchEvents.isEmpty {
-            Text("No match events available.")
-                .foregroundStyle(.secondary)
-                .padding()
-        } else {
-            VStack(alignment: .center, spacing: 0) {
-                // Reverse chronological order for timeline format
-                ForEach(matchEvents.reversed()) { event in
-                    let isHome = event.teamName == fixture.homeTeam
-                    
-                    HStack(spacing: 8) {
-                        if isHome {
-                            // Home Team -> Left Aligned
-                            timeView(for: event)
-                            eventIconWrapper(for: event)
-                            eventDetailsView(for: event, isHome: true)
-                            Spacer(minLength: 0)
-                        } else {
-                            // Away Team -> Right Aligned
-                            Spacer(minLength: 0)
-                            eventDetailsView(for: event, isHome: false)
-                            eventIconWrapper(for: event)
-                            timeView(for: event)
+        VStack(spacing: 24) {
+            // Venue Section
+            if let venue = matchVenue {
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Match Info")
+                        .font(.headline)
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal)
+                        
+                    VStack(spacing: 16) {
+                        HStack(spacing: 16) {
+                            Image(systemName: "mappin.and.ellipse")
+                                .font(.title3)
+                                .foregroundStyle(Color.accentColor)
+                                .frame(width: 24)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(venue.name)
+                                    .font(.subheadline.bold())
+                                Text(venue.city)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                        }
+                        
+                        Divider()
+                        
+                        HStack(spacing: 16) {
+                            Image(systemName: "person.3.fill")
+                                .font(.title3)
+                                .foregroundStyle(Color.accentColor)
+                                .frame(width: 24)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Capacity")
+                                    .font(.subheadline.bold())
+                                Text("\(venue.capacity)")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                        }
+                        
+                        Divider()
+                        
+                        HStack(spacing: 16) {
+                            Image(systemName: "trophy.fill")
+                                .font(.title3)
+                                .foregroundStyle(Color.accentColor)
+                                .frame(width: 24)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Competition")
+                                    .font(.subheadline.bold())
+                                Text(fixture.competition.name)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                            Spacer()
                         }
                     }
-                    .padding(.vertical, 10)
-                    .padding(.horizontal, 12)
-                    
-                    if event.id != matchEvents.reversed().last?.id {
-                        Divider()
-                            .padding(.horizontal, 12)
-                    }
+                    .padding()
+                    .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 12))
+                    .shadow(color: .black.opacity(0.04), radius: 6, y: 3)
+                    .padding(.horizontal)
                 }
             }
-            .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 12))
-            .shadow(color: .black.opacity(0.04), radius: 6, y: 3)
-            .padding(.horizontal)
+            
+            if matchEvents.isEmpty {
+                Text("No match events available.")
+                    .foregroundStyle(.secondary)
+                    .padding()
+            } else {
+                VStack(alignment: .leading, spacing: 12) {
+                    if matchVenue != nil {
+                        Text("Match Events")
+                            .font(.headline)
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal)
+                    }
+                    
+                    VStack(alignment: .center, spacing: 0) {
+                        // Reverse chronological order for timeline format
+                        ForEach(matchEvents.reversed()) { event in
+                            let isHome = event.teamName == fixture.homeTeam
+                            
+                            HStack(spacing: 8) {
+                                if isHome {
+                                    // Home Team -> Left Aligned
+                                    timeView(for: event)
+                                    eventIconWrapper(for: event)
+                                    eventDetailsView(for: event, isHome: true)
+                                    Spacer(minLength: 0)
+                                } else {
+                                    // Away Team -> Right Aligned
+                                    Spacer(minLength: 0)
+                                    eventDetailsView(for: event, isHome: false)
+                                    eventIconWrapper(for: event)
+                                    timeView(for: event)
+                                }
+                            }
+                            .padding(.vertical, 10)
+                            .padding(.horizontal, 12)
+                        }
+                    }
+                    .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 12))
+                    .shadow(color: .black.opacity(0.04), radius: 6, y: 3)
+                    .padding(.horizontal)
+                }
+            }
         }
     }
     
@@ -925,6 +997,16 @@ struct MarketSelectionView: View {
                         
                         Divider()
                         
+                        // Expected Goals (xG)
+                        if let (xgHome, xgAway) = calculateXG(home: home, away: away) {
+                            statRowWithLabel(
+                                homeVal: String(format: "%.2f", xgHome),
+                                awayVal: String(format: "%.2f", xgAway),
+                                label: "Expected Goals (xG)"
+                            )
+                            Divider()
+                        }
+                        
                         // Goals Scored
                         statRowWithLabel(homeVal: home.avgGoalsScoredTotal, awayVal: away.avgGoalsScoredTotal, label: "Scored / Game")
                         Divider()
@@ -947,6 +1029,31 @@ struct MarketSelectionView: View {
                             awayVal: awayBttsPercentage != nil ? "\(Int(awayBttsPercentage! * 100))%" : "--%",
                             label: "BTTS (Historic %)"
                         )
+                        
+                        if !homeTopScorers.isEmpty || !awayTopScorers.isEmpty {
+                            Divider()
+                                .padding(.top, 16)
+                            
+                            Text("Top Goalscorers")
+                                .font(.subheadline.bold())
+                                .foregroundStyle(.secondary)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(.bottom, 8)
+                                .padding(.top, 8)
+                            
+                            if !homeTopScorers.isEmpty {
+                                TopScorersView(teamName: fixture.homeTeam, scorers: homeTopScorers, injuries: injuries)
+                            }
+                            
+                            if !homeTopScorers.isEmpty && !awayTopScorers.isEmpty {
+                                Divider()
+                                    .padding(.vertical, 12)
+                            }
+                            
+                            if !awayTopScorers.isEmpty {
+                                TopScorersView(teamName: fixture.awayTeam, scorers: awayTopScorers, injuries: injuries)
+                            }
+                        }
                         
                     }
                     .padding()
@@ -983,27 +1090,6 @@ struct MarketSelectionView: View {
                         homeVal: "\(Int(home.homeFailedToScorePercentage * 100))%",
                         awayVal: "\(Int(away.awayFailedToScorePercentage * 100))%"
                     )
-                }
-                
-                // Top Scorers
-                if !homeTopScorers.isEmpty || !awayTopScorers.isEmpty {
-                    marketSection(title: "Top Goalscorers") {
-                        VStack(spacing: 16) {
-                            if !homeTopScorers.isEmpty {
-                                TopScorersView(teamName: fixture.homeTeam, scorers: homeTopScorers, injuries: injuries)
-                            }
-                            
-                            if !homeTopScorers.isEmpty && !awayTopScorers.isEmpty {
-                                Divider()
-                            }
-                            
-                            if !awayTopScorers.isEmpty {
-                                TopScorersView(teamName: fixture.awayTeam, scorers: awayTopScorers, injuries: injuries)
-                            }
-                        }
-                        .padding()
-                        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16))
-                    }
                 }
             }
             .padding(.top, 8)
@@ -1121,11 +1207,6 @@ struct MarketSelectionView: View {
                         Text("Go to My Groups to create one.")
                             .foregroundStyle(.secondary)
                             .font(.subheadline)
-                        Button("Dismiss") {
-                            dismiss()
-                        }
-                        .buttonStyle(.bordered)
-                        .tint(.accentColor)
                     }
                     .padding()
                     .frame(maxWidth: .infinity)
@@ -1228,6 +1309,7 @@ struct MarketSelectionView: View {
             var fetchedAwayBtts: Double? = nil
             var fetchedHomeScorers: [GoalScorer] = []
             var fetchedAwayScorers: [GoalScorer] = []
+            var fetchedVenue: Venue? = nil
             
             if let leagueId = fixture.competition.apiId {
                 // Try fetch standings
@@ -1252,6 +1334,7 @@ struct MarketSelectionView: View {
                     async let fullLeagueTask = APIService.shared.fetchFinishedFixtures(leagueId: leagueId, season: season)
                     async let homeScorersTask = APIService.shared.fetchTopScorers(teamId: homeTeamId, season: season)
                     async let awayScorersTask = APIService.shared.fetchTopScorers(teamId: awayTeamId, season: season)
+                    async let venueTask = APIService.shared.fetchTeamVenue(teamId: homeTeamId)
                     
                     if let home = try? await homeStatsTask { fetchedHomeStats = home }
                     if let away = try? await awayStatsTask { fetchedAwayStats = away }
@@ -1259,6 +1342,7 @@ struct MarketSelectionView: View {
                     if let awayF = try? await awayRecentTask { fetchedAwayFixtures = awayF }
                     if let hs = try? await homeScorersTask { fetchedHomeScorers = hs }
                     if let asco = try? await awayScorersTask { fetchedAwayScorers = asco }
+                    if let ven = try? await venueTask { fetchedVenue = ven }
                     if let fullFixtures = try? await fullLeagueTask {
                         var homePlayed = 0
                         var homeBttsCount = 0
@@ -1299,6 +1383,7 @@ struct MarketSelectionView: View {
             let finalAwayBtts = fetchedAwayBtts
             let finalHomeScorers = fetchedHomeScorers
             let finalAwayScorers = fetchedAwayScorers
+            let finalVenue = fetchedVenue
             
             await MainActor.run {
                 self.matchEvents = finalEvents.sorted(by: { $0.elapsed > $1.elapsed }) // Newest first
@@ -1313,6 +1398,7 @@ struct MarketSelectionView: View {
                 self.awayBttsPercentage = finalAwayBtts
                 self.homeTopScorers = finalHomeScorers
                 self.awayTopScorers = finalAwayScorers
+                self.matchVenue = finalVenue
             }
             
             // Try fetching active member picks for this fixture
@@ -1578,55 +1664,48 @@ struct TopScorersView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text(teamName)
-                .font(.subheadline.bold())
+                .font(.footnote.bold())
                 .foregroundStyle(.secondary)
             
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 24) {
-                    ForEach(scorers) { scorer in
-                        let isUnavailable = injuries.contains { injury in
-                            // api-football player names often match partially or fully.
-                            // For simplicity, we check if the injury name contains the scorer name 
-                            // or vice versa, or just equality.
-                            injury.playerName.lowercased().contains(scorer.name.lowercased()) || scorer.name.lowercased().contains(injury.playerName.lowercased())
+            VStack(spacing: 12) {
+                ForEach(scorers) { scorer in
+                    let isUnavailable = injuries.contains { injury in
+                        injury.playerName.lowercased().contains(scorer.name.lowercased()) || scorer.name.lowercased().contains(injury.playerName.lowercased())
+                    }
+                    
+                    HStack(spacing: 16) {
+                        ZStack(alignment: .topTrailing) {
+                            AsyncImage(url: URL(string: scorer.photo ?? "")) { image in
+                                image.resizable().scaledToFill()
+                            } placeholder: {
+                                Circle().fill(Color.gray.opacity(0.3))
+                            }
+                            .frame(width: 40, height: 40)
+                            .clipShape(Circle())
+                            .overlay(Circle().stroke(Color.secondary.opacity(0.2), lineWidth: 1))
+                            
+                            if isUnavailable {
+                                Image(systemName: "cross.circle.fill")
+                                    .resizable()
+                                    .frame(width: 14, height: 14)
+                                    .foregroundStyle(.white, .red)
+                                    .background(Circle().fill(.white))
+                                    .offset(x: 2, y: -2)
+                            }
                         }
                         
-                        VStack(spacing: 6) {
-                            ZStack(alignment: .topTrailing) {
-                                AsyncImage(url: URL(string: scorer.photo ?? "")) { image in
-                                    image.resizable().scaledToFill()
-                                } placeholder: {
-                                    Circle().fill(Color.gray.opacity(0.3))
-                                }
-                                .frame(width: 55, height: 55)
-                                .clipShape(Circle())
-                                .overlay(Circle().stroke(Color.secondary.opacity(0.2), lineWidth: 1))
-                                
-                                if isUnavailable {
-                                    Image(systemName: "cross.circle.fill")
-                                        .resizable()
-                                        .frame(width: 18, height: 18)
-                                        .foregroundStyle(.white, .red)
-                                        .background(Circle().fill(.white))
-                                        .offset(x: 4, y: -4)
-                                }
-                            }
-                            
-                            // Get the last word (usually surname) to fit the UI nicely
-                            Text(scorer.name.split(separator: " ").last ?? String.SubSequence(scorer.name))
-                                .font(.caption)
-                                .fontWeight(.medium)
-                                .lineLimit(1)
-                                .frame(maxWidth: 70)
-                            
-                            Text("\(scorer.goals) Goals")
-                                .font(.caption2.bold())
-                                .foregroundStyle(Color.accentColor)
-                        }
+                        Text(scorer.name.split(separator: " ").last ?? String.SubSequence(scorer.name))
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                            .lineLimit(1)
+                        
+                        Spacer()
+                        
+                        Text("\(scorer.goals) Goals")
+                            .font(.subheadline.bold())
+                            .foregroundStyle(Color.accentColor)
                     }
                 }
-                .padding(.horizontal, 4)
-                .padding(.vertical, 4)
             }
         }
     }

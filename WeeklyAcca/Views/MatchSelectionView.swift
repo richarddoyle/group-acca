@@ -16,7 +16,7 @@ struct MatchSelectionView: View {
     
     // Pill State
     enum ActivePill {
-        case none, form, cleanSheet, btts, position, predBtts, predOver25
+        case none, form, cleanSheet, btts, position, predBtts, predOver25, predResult
     }
     
     enum SortOption {
@@ -41,6 +41,7 @@ struct MatchSelectionView: View {
     
     @State private var fixtureBttsPredictions: [String: Double] = [:]
     @State private var fixtureOver25Predictions: [String: Double] = [:]
+    @State private var fixtureResultPredictions: [String: (home: Double, draw: Double, away: Double)] = [:]
     @State private var isFetchingPredictions: Bool = false
     
     // Pick Validation State
@@ -158,9 +159,10 @@ struct MatchSelectionView: View {
                                     } else if activePill == .position {
                                         teamPositions.removeAll()
                                         fetchPositions()
-                                    } else if activePill == .predBtts || activePill == .predOver25 {
+                                    } else if activePill == .predBtts || activePill == .predOver25 || activePill == .predResult {
                                         fixtureBttsPredictions.removeAll()
                                         fixtureOver25Predictions.removeAll()
+                                        fixtureResultPredictions.removeAll()
                                         fetchPredictions()
                                     }
                                 }
@@ -245,6 +247,23 @@ struct MatchSelectionView: View {
                         
                         Button {
                             withAnimation {
+                                activePill = activePill == .predResult ? .none : .predResult
+                                if activePill == .predResult && fixtureResultPredictions.isEmpty {
+                                    fetchPredictions()
+                                }
+                            }
+                        } label: {
+                            Text("Result Predict")
+                                .font(.subheadline)
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 8)
+                                .background(activePill == .predResult ? Color.accentColor : Color(.systemGray5))
+                                .foregroundStyle(activePill == .predResult ? .white : .primary)
+                                .clipShape(Capsule())
+                        }
+                        
+                        Button {
+                            withAnimation {
                                 activePill = activePill == .cleanSheet ? .none : .cleanSheet
                                 if activePill == .cleanSheet && teamCleanSheets.isEmpty {
                                     fetchCleanSheets()
@@ -306,7 +325,7 @@ struct MatchSelectionView: View {
                                     Section(content: {
                                         pillExplanationView
                                     }, footer: {
-                                        if activePill == .position || activePill == .predBtts || activePill == .predOver25 {
+                                        if activePill == .position || activePill == .predBtts || activePill == .predOver25 || activePill == .predResult {
                                             HStack {
                                                 Spacer()
                                                 Menu {
@@ -362,7 +381,7 @@ struct MatchSelectionView: View {
                                 }
                             }
                             .listStyle(.insetGrouped)
-                            .padding(.top, -24)
+                            .padding(.top, activePill == .none ? 0 : -24)
                         }
                     }
                 }
@@ -391,13 +410,15 @@ struct MatchSelectionView: View {
                 showPositions: activePill == .position,
                 matchBttsPredict: fixtureBttsPredictions[String(fixture.apiId ?? 0)],
                 matchOver25Predict: fixtureOver25Predictions[String(fixture.apiId ?? 0)],
+                matchResultPredict: fixtureResultPredictions[String(fixture.apiId ?? 0)],
                 showBttsPredict: activePill == .predBtts,
                 showOver25Predict: activePill == .predOver25,
+                showResultPredict: activePill == .predResult,
                 isLoadingStats: activePill == .form ? isFetchingForms :
                                 activePill == .cleanSheet ? isFetchingCleanSheets :
                                 activePill == .btts ? isFetchingBtts :
                                 activePill == .position ? isFetchingPositions :
-                                (activePill == .predBtts || activePill == .predOver25) ? isFetchingPredictions : false,
+                                (activePill == .predBtts || activePill == .predOver25 || activePill == .predResult) ? isFetchingPredictions : false,
                 takenByMember: takenInfo?.name,
                 takenByAvatarUrl: takenInfo?.avatarUrl,
                 takenByBadgeEmoji: takenInfo != nil ? badgeManager.badges[takenInfo!.memberId] : nil
@@ -482,7 +503,7 @@ struct MatchSelectionView: View {
                     fetchBtts()
                 case .position:
                     fetchPositions()
-                case .predBtts, .predOver25:
+                case .predBtts, .predOver25, .predResult:
                     fetchPredictions()
                 case .none:
                     break
@@ -748,6 +769,7 @@ struct MatchSelectionView: View {
             
             var bttsResults: [String: Double] = [:]
             var over25Results: [String: Double] = [:]
+            var resultPredictions: [String: (home: Double, draw: Double, away: Double)] = [:]
             
             let allCurrentFixtures = fixtures.values.flatMap { $0 }
             
@@ -778,11 +800,43 @@ struct MatchSelectionView: View {
                 let pOver2_5 = 1.0 - pUnder2_5
                 
                 over25Results[String(id)] = pOver2_5
+                
+                // Result 1X2 Exact calculation (up to 10 goals each to cover 99.9% probability)
+                var pHome = 0.0
+                var pDraw = 0.0
+                var pAway = 0.0
+                
+                for h in 0...10 {
+                    for a in 0...10 {
+                        let probH = exp(-xgHome) * pow(xgHome, Double(h)) / Double((1...max(1, h)).reduce(1, *))
+                        let probA = exp(-xgAway) * pow(xgAway, Double(a)) / Double((1...max(1, a)).reduce(1, *))
+                        let prob = probH * probA
+                        
+                        if h > a {
+                            pHome += prob
+                        } else if h == a {
+                            pDraw += prob
+                        } else {
+                            pAway += prob
+                        }
+                    }
+                }
+                
+                // Normalize probabilities just in case
+                let totalP = pHome + pDraw + pAway
+                if totalP > 0 {
+                    pHome /= totalP
+                    pDraw /= totalP
+                    pAway /= totalP
+                }
+                
+                resultPredictions[String(id)] = (home: pHome, draw: pDraw, away: pAway)
             }
             
             await MainActor.run {
                 self.fixtureBttsPredictions = bttsResults
                 self.fixtureOver25Predictions = over25Results
+                self.fixtureResultPredictions = resultPredictions
                 self.isFetchingPredictions = false
             }
         }
@@ -1036,6 +1090,7 @@ extension MatchSelectionView {
             case .position: return "The team's current position in their league standings."
             case .predBtts: return "Calculated probability that BOTH teams will score based on historic goals."
             case .predOver25: return "Calculated probability that the match will have over 2.5 total goals."
+            case .predResult: return "Calculated likelihood of a Home win (1), Draw (X), or Away win (2) based on past scoring."
             }
         }()
 
@@ -1085,6 +1140,11 @@ extension MatchSelectionView {
             return fixtureBttsPredictions[String(fixture.apiId ?? 0)] ?? 0.0
         case .predOver25:
             return fixtureOver25Predictions[String(fixture.apiId ?? 0)] ?? 0.0
+        case .predResult:
+            if let probs = fixtureResultPredictions[String(fixture.apiId ?? 0)] {
+                return max(probs.home, probs.away)
+            }
+            return 0.0
         case .none:
             return 0.0
         }
