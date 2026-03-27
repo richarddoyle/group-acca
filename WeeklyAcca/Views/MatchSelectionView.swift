@@ -906,6 +906,17 @@ struct MatchSelectionView: View {
                 // Filter to picks made by *other* members
                 let otherMembersPicks = allSelections.filter { $0.memberId != selection.memberId }
                 
+                // 0. Check own picks for duplicate team name
+                let myOtherPicks = allSelections.filter { $0.memberId == selection.memberId && $0.id != selection.id }
+                if myOtherPicks.contains(where: { $0.teamName == team }) {
+                    await MainActor.run {
+                        isLoading = false
+                        duplicateErrorMessage = "\(team) has already been selected in this acca. Please make a different pick."
+                        showDuplicateError = true
+                    }
+                    return
+                }
+
                 // 1. Check for Exact Duplicate
                 if otherMembersPicks.contains(where: { $0.fixtureId == fixture.apiId && $0.teamName == team }) {
                     await MainActor.run {
