@@ -950,6 +950,7 @@ struct MatchSelectionView: View {
                 // Update local selection object
                 selection.teamName = team
                 selection.league = fixture.competition.name
+                selection.leagueId = fixture.competition.apiId
                 selection.odds = odds
                 selection.outcome = .pending
                 selection.kickoffTime = fixture.date

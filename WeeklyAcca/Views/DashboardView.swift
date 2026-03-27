@@ -536,6 +536,34 @@ struct GroupWeeksView: View {
     }
 }
 
+private struct CopyableSelectionRow: View {
+    @EnvironmentObject var badgeManager: GroupBadgeManager
+    let selection: Selection
+    let memberName: String?
+    let avatarUrl: String?
+    let isLocked: Bool
+    let showCopyIcon: Bool
+
+    @State private var copied = false
+
+    var body: some View {
+        HStack(alignment: .center) {
+            SelectionRow(selection: selection, memberName: memberName, avatarUrl: avatarUrl, isLocked: isLocked)
+            if showCopyIcon {
+                Button {
+                    UIPasteboard.general.string = "\(selection.homeTeamName ?? "") v \(selection.awayTeamName ?? "")"
+                    copied = true
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { copied = false }
+                } label: {
+                    Image(systemName: copied ? "checkmark" : "doc.on.doc")
+                        .foregroundStyle(copied ? .green : .secondary)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+}
+
 struct WeekDetailView: View {
     @Binding var week: Week
     let group: BettingGroup
@@ -646,21 +674,65 @@ struct WeekDetailView: View {
     // Creator identification
     private var creatorName: String? {
         guard let creatorId = currentWeek.creatorId else { return nil }
-        
+
         // If the current user is the creator
         if SupabaseService.shared.currentUserId == creatorId {
             return "You"
         }
-        
+
         // Find the creator in the members list
         if let creatorMember = members.first(where: { $0.userId == creatorId }) {
             return creatorMember.name
         }
-        
+
         return nil
     }
-    
-    var body: some View {
+
+    // MARK: - Sorting
+    private let competitionPriority = [
+        39,   // Premier League
+        40,   // Championship
+        41,   // League One (English)
+        42,   // League Two (English)
+        179,  // Scottish Premiership
+        180,  // Scottish Championship
+        183,  // Scottish League One
+        184,  // Scottish League Two
+        2,    // Champions League
+        3,    // Europa League
+        1,    // World Cup
+        4,    // Euro Championship
+        960,  // Euro Championship - Qualification
+        32,   // World Cup - Qualification Europe
+        5,    // UEFA Nations League
+        10,   // Friendlies
+        140,  // La Liga
+        78,   // Bundesliga
+        135,  // Serie A
+        61,   // Ligue 1
+    ]
+
+    private func sortedSelections(_ input: [Selection]) -> [Selection] {
+        return input.sorted { a, b in
+            let aTime = a.kickoffTime, bTime = b.kickoffTime
+            if aTime != bTime {
+                guard let at = aTime else { return false }
+                guard let bt = bTime else { return true }
+                if at != bt { return at < bt }
+            }
+            let aPri = a.leagueId.flatMap { competitionPriority.firstIndex(of: $0) } ?? Int.max
+            let bPri = b.leagueId.flatMap { competitionPriority.firstIndex(of: $0) } ?? Int.max
+            if aPri != bPri { return aPri < bPri }
+            return (a.homeTeamName ?? "") < (b.homeTeamName ?? "")
+        }
+    }
+
+    private var isAccaOwner: Bool {
+        guard let creatorId = currentWeek.creatorId else { return false }
+        return SupabaseService.shared.currentUserId == creatorId
+    }
+
+var body: some View {
         List {
             Section {
                 VStack(alignment: .leading, spacing: 6) {
@@ -801,7 +873,7 @@ struct WeekDetailView: View {
             // MARK: - My Pick Section
             Section("My Pick\(mySelections.count > 1 ? "s" : "")") {
                 if !mySelections.isEmpty {
-                    ForEach(mySelections) { selection in
+                    ForEach(sortedSelections(mySelections)) { selection in
                         if currentWeek.isOpen {
                             ZStack {
                                 NavigationLink(destination: MatchSelectionView(selection: selection, week: currentWeek, memberSelections: memberSelections)) {
@@ -841,8 +913,14 @@ struct WeekDetailView: View {
                     ForEach(memberSelections, id: \.member.id) { item in
                         Group {
                             if !item.selections.isEmpty {
-                                ForEach(item.selections) { selection in
-                                    SelectionRow(selection: selection, memberName: item.member.name, avatarUrl: item.avatarUrl, isLocked: !currentWeek.isOpen)
+                                ForEach(sortedSelections(item.selections)) { selection in
+                                    CopyableSelectionRow(
+                                        selection: selection,
+                                        memberName: item.member.name,
+                                        avatarUrl: item.avatarUrl,
+                                        isLocked: !currentWeek.isOpen,
+                                        showCopyIcon: selection.teamName != "Pending" && isAccaOwner
+                                    )
                                 }
                             } else {
                                 HStack(spacing: 12) {

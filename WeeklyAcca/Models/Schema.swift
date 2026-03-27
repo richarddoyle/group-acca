@@ -129,7 +129,8 @@ struct Selection: Codable, Identifiable, Hashable {
     var homeTeamLogoUrl: String?
     var awayTeamLogoUrl: String?
     var isPaid: Bool = false
-    
+    var leagueId: Int?
+
     enum CodingKeys: String, CodingKey {
         case id
         case accaId = "acca_id"
@@ -149,6 +150,7 @@ struct Selection: Codable, Identifiable, Hashable {
         case homeTeamLogoUrl = "home_team_logo_url"
         case awayTeamLogoUrl = "away_team_logo_url"
         case isPaid = "is_paid"
+        case leagueId = "league_id"
     }
 }
 
