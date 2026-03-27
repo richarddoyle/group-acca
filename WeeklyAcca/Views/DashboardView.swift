@@ -575,8 +575,8 @@ struct WeekDetailView: View {
     @State private var members: [Member] = []
     @State private var profiles: [UUID: Profile] = [:]
     @State private var isLoading: Bool = true
-    @State private var isCreatingPick: Bool = false
     @State private var isUpdatingPayment: Bool = false
+    @State private var addPickSelection: Selection? = nil
     
     @State private var showingErrorAlert: Bool = false
     @State private var errorMessage: String = ""
@@ -889,13 +889,23 @@ var body: some View {
                     }
                     
                     if currentWeek.isOpen, mySelections.count < (currentWeek.maxPicksPerMember ?? 1) {
-                         Button {
-                             createMyPick()
-                         } label: {
-                             Text("Add another pick")
-                                 .font(.subheadline)
-                                 .foregroundColor(.blue)
-                         }
+                        Button {
+                            if let myMember = currentUserMember {
+                                addPickSelection = Selection(
+                                    id: UUID(),
+                                    accaId: currentWeek.id,
+                                    memberId: myMember.id,
+                                    teamName: "Pending",
+                                    league: "",
+                                    outcome: .pending,
+                                    odds: 0.0
+                                )
+                            }
+                        } label: {
+                            Text("Add another pick")
+                                .font(.subheadline)
+                                .foregroundColor(.blue)
+                        }
                     }
                 } else {
                     Text("you are not included in this acca")
@@ -945,11 +955,13 @@ var body: some View {
             }
         }
         .navigationTitle(currentWeek.title)
+        .navigationDestination(item: $addPickSelection) { sel in
+            MatchSelectionView(selection: sel, week: currentWeek, memberSelections: memberSelections)
+                .environmentObject(badgeManager)
+        }
         .onAppear {
             self.currentWeek = week
-        }
-        .task {
-            await loadData()
+            Task { await loadData() }
         }
         .refreshable {
             await loadData()
@@ -1017,40 +1029,6 @@ var body: some View {
         }
     }
     
-    private func createMyPick() {
-        isCreatingPick = true
-        Task {
-            do {
-                if let myMember = currentUserMember {
-                     let finalSelection = Selection(
-                        id: UUID(),
-                        accaId: currentWeek.id,
-                        memberId: myMember.id,
-                        teamName: "Pending",
-                        league: "Pending",
-                        outcome: .pending,
-                        odds: 0.0
-                     )
-                     try await SupabaseService.shared.saveSelection(finalSelection)
-                     await loadData()
-                } else {
-                    print("Could not find member record for current user")
-                    await MainActor.run {
-                        errorMessage = "Could not identify your membership in this group. You may need to ask the admin to recreate your membership."
-                        showingErrorAlert = true
-                    }
-                }
-                await MainActor.run { isCreatingPick = false }
-            } catch {
-                print("Error creating pick: \(error)")
-                await MainActor.run { 
-                    errorMessage = error.localizedDescription
-                    showingErrorAlert = true
-                    isCreatingPick = false 
-                }
-            }
-        }
-    }
     private func mapOutcomeToStatus(_ outcome: SelectionOutcome) -> WeekStatus {
         switch outcome {
         case .pending: return .pending
