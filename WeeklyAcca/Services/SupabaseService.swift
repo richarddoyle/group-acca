@@ -455,6 +455,15 @@ class SupabaseService {
             .upsert(selection)
             .execute()
     }
+
+    // Delete a single selection by id
+    func deleteSelection(id: UUID) async throws {
+        try await client
+            .from("selections")
+            .delete()
+            .eq("id", value: id)
+            .execute()
+    }
     
     // Update a betting group (name/avatar)
     func updateGroup(_ group: BettingGroup) async throws {

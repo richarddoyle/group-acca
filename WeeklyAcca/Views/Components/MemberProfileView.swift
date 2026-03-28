@@ -2,6 +2,7 @@ import SwiftUI
 
 struct MemberProfileView: View {
     @Environment(\.dismiss) var dismiss
+    @EnvironmentObject var badgeManager: GroupBadgeManager
     let member: Member
     let group: BettingGroup
     let avatarUrl: String?
@@ -10,6 +11,7 @@ struct MemberProfileView: View {
     var week: Week? = nil
     var selections: [Selection]? = nil
     var onUpdateRow: (() -> Void)? = nil
+    var allMemberSelections: [MemberSelectionDisplay] = []
     
     @State private var isUpdating: Bool = false
     @State private var showingError: Bool = false
@@ -24,6 +26,8 @@ struct MemberProfileView: View {
     @State private var activeAwards: [ActiveAward] = []
     @State private var currentStreak: Int = 0
     @State private var recentPicks: [Selection] = []
+    @State private var addPickSelection: Selection?
+    @State private var localSelections: [Selection]?
     
     // Derived state for the target user (Admin)
     private var isUserPaid: Bool {
@@ -34,9 +38,22 @@ struct MemberProfileView: View {
     private var isAdmin: Bool {
         return SupabaseService.shared.currentUserId == group.adminId
     }
-    
+
+    private var isAccaAdmin: Bool {
+        return SupabaseService.shared.currentUserId == week?.creatorId
+    }
+
     private var canManagePayment: Bool {
-        return isAdmin && week != nil && selections != nil && !(selections!.isEmpty)
+        return (isAdmin || isAccaAdmin) && week != nil && selections != nil && !(selections!.isEmpty)
+    }
+
+    private var canManagePicksOnBehalf: Bool {
+        guard isAdmin || isAccaAdmin, let week = week else { return false }
+        return week.status == .pending
+    }
+
+    private var currentSelections: [Selection] {
+        localSelections ?? selections ?? []
     }
     
     var body: some View {
@@ -123,7 +140,40 @@ struct MemberProfileView: View {
                         .listRowBackground(Color.clear)
                     }
                 }
-                
+
+                // On-Behalf Picks Management
+                if canManagePicksOnBehalf {
+                    Section("This Week's Picks") {
+                        ForEach(currentSelections) { sel in
+                            Button {
+                                addPickSelection = sel
+                            } label: {
+                                SelectionRow(selection: sel, memberName: nil, avatarUrl: nil, isLocked: false, hideBadge: true)
+                            }
+                            .buttonStyle(.plain)
+                        }
+
+                        if currentSelections.count < (week?.maxPicksPerMember ?? 1) {
+                            Button {
+                                guard let week = week else { return }
+                                addPickSelection = Selection(
+                                    id: UUID(),
+                                    accaId: week.id,
+                                    memberId: member.id,
+                                    teamName: "Pending",
+                                    league: "",
+                                    outcome: .pending,
+                                    odds: 0.0
+                                )
+                            } label: {
+                                Text("Add pick")
+                                    .font(.subheadline)
+                                    .foregroundColor(.blue)
+                            }
+                        }
+                    }
+                }
+
                 if isLoadingStats {
                     HStack {
                         Spacer()
@@ -180,6 +230,18 @@ struct MemberProfileView: View {
             })
             .task {
                 await loadUserStats()
+            }
+            .fullScreenCover(item: $addPickSelection, onDismiss: {
+                onUpdateRow?()
+                Task { await refreshSelections() }
+            }) { sel in
+                MatchSelectionView(
+                    selection: sel,
+                    week: week,
+                    memberSelections: allMemberSelections,
+                    onBehalfOfName: member.name
+                )
+                .environmentObject(badgeManager)
             }
         }
     }
@@ -310,6 +372,19 @@ struct MemberProfileView: View {
                     isUpdating = false
                 }
             }
+        }
+    }
+
+    private func refreshSelections() async {
+        guard let week = week else { return }
+        do {
+            let all = try await SupabaseService.shared.fetchSelections(weekId: week.id)
+            let memberPicks = all.filter { $0.memberId == member.id }
+            await MainActor.run {
+                localSelections = memberPicks
+            }
+        } catch {
+            print("Error refreshing selections: \(error)")
         }
     }
 }

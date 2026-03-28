@@ -581,6 +581,8 @@ struct WeekDetailView: View {
     @State private var showingErrorAlert: Bool = false
     @State private var errorMessage: String = ""
     @State private var selectedMemberForAdmin: MemberSelectionDisplay? = nil
+    @State private var selectionPendingDelete: Selection? = nil
+    @State private var showingPaidDeleteAlert: Bool = false
     
     @EnvironmentObject var badgeManager: GroupBadgeManager
     
@@ -734,225 +736,9 @@ struct WeekDetailView: View {
 
 var body: some View {
         List {
-            Section {
-                VStack(alignment: .leading, spacing: 6) {
-                    HStack {
-                        Text("Status")
-                        Spacer()
-                        if liveStatus == .pending {
-                            if currentWeek.isOpen {
-                                StatusBadge(status: .pending, label: "Open", color: .blue)
-                            } else {
-                                StatusBadge(status: .pending, label: "In Progress", color: .orange)
-                            }
-                        } else {
-                            StatusBadge(status: liveStatus)
-                        }
-                    }
-                    
-                    if currentWeek.isOpen {
-                        HStack(spacing: 6) {
-                            Image(systemName: "lock")
-                                .foregroundStyle(.secondary)
-                                .frame(width: 16)
-                            Text("Picks lock on \(formatLockDate(currentWeek.startDate))")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                        
-                        let currentStake = currentWeek.stakePerPick ?? group.stakePerPerson
-                        HStack(spacing: 6) {
-                            Image(systemName: "banknote")
-                                .foregroundStyle(.secondary)
-                                .frame(width: 16)
-                            Text("Stake is £\(String(format: "%.2f", currentStake)) per pick")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                    
-                    HStack(spacing: 6) {
-                        Image(systemName: "list.bullet.clipboard")
-                            .foregroundStyle(.secondary)
-                            .frame(width: 16)
-                        Text("\(membersWithPicksCount)/\(totalMembersCount) members have made a pick")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                    
-                    HStack(spacing: 6) {
-                        Image(systemName: "sterlingsign.circle")
-                            .foregroundStyle(.secondary)
-                            .frame(width: 16)
-                        Text("\(membersPaidCount)/\(totalMembersCount) members paid")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                    
-                    if let name = creatorName {
-                        HStack(spacing: 6) {
-                            Image(systemName: "person.fill")
-                                .foregroundStyle(.secondary)
-                                .frame(width: 16)
-                            Text("\(name) \(name == "You" ? "are" : "is") the acca owner")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                    
-                    if liveStatus == .pending && !currentWeek.isOpen {
-                        HStack(spacing: 6) {
-                            Image(systemName: "arrow.up.right.circle")
-                                .foregroundStyle(.secondary)
-                                .frame(width: 16)
-                            Text("The total stake is £\(String(format: "%.2f", totalStake)) and the estimate return is £\(String(format: "%.2f", potentialWinnings))")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                }
-                .padding(.vertical, 2)
-                
-                if !mySelections.isEmpty && !mySelections.contains(where: { $0.teamName == "Pending" }) {
-                    HStack {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("Payment Confirmation")
-                                .font(.headline)
-                            let currentStake = currentWeek.stakePerPick ?? group.stakePerPerson
-                            let totalStakeCost = currentStake * Double(mySelections.count)
-                            Text("I have paid my £\(String(format: "%.2f", totalStakeCost)) stake")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                        Spacer()
-                        
-                        let isPaid = mySelections.first?.isPaid ?? false
-                        Button {
-                            togglePaymentStatus(to: !isPaid)
-                        } label: {
-                            Image(systemName: isPaid ? "checkmark.circle.fill" : "circle")
-                                .font(.title2)
-                                .foregroundStyle(isPaid ? .green : .gray)
-                                .accessibilityLabel(isPaid ? "Payment confirmed" : "Mark as paid")
-                        }
-                        .buttonStyle(.plain)
-                        .disabled(isUpdatingPayment)
-                    }
-                    .padding(.vertical, 4)
-                    
-                    if let monzoUser = currentWeek.monzoUsername, !monzoUser.isEmpty, monzoUser != myMonzoUsername {
-                        let currentStake = currentWeek.stakePerPick ?? group.stakePerPerson
-                        let totalStakeCost = currentStake * Double(mySelections.count)
-                        
-                        Button {
-                            let urlString = "https://monzo.me/\(monzoUser)/\(String(format: "%.2f", totalStakeCost))"
-                            if let url = URL(string: urlString) {
-                                UIApplication.shared.open(url)
-                            }
-                        } label: {
-                            HStack {
-                                Spacer()
-                                Image(systemName: "sterlingsign.circle.fill")
-                                let ownerName = creatorName ?? "Owner"
-                                Text("Pay \(ownerName) £\(String(format: "%.2f", totalStakeCost)) via Monzo")
-                                    .fontWeight(.semibold)
-                                Spacer()
-                            }
-                            .padding()
-                            .background(Color.accentColor.opacity(0.15))
-                            .foregroundStyle(Color.accentColor)
-                            .clipShape(RoundedRectangle(cornerRadius: 12))
-                        }
-                        .buttonStyle(.plain)
-                        .padding(.bottom, 4)
-                    }
-                }
-            }
-            
-            
-            // MARK: - My Pick Section
-            Section("My Pick\(mySelections.count > 1 ? "s" : "")") {
-                if !mySelections.isEmpty {
-                    ForEach(sortedSelections(mySelections)) { selection in
-                        if currentWeek.isOpen {
-                            ZStack {
-                                NavigationLink(destination: MatchSelectionView(selection: selection, week: currentWeek, memberSelections: memberSelections)) {
-                                    EmptyView()
-                                }
-                                .opacity(0)
-                                
-                                SelectionRow(selection: selection, memberName: nil, avatarUrl: nil, isLocked: false)
-                            }
-                        } else {
-                            SelectionRow(selection: selection, memberName: nil, avatarUrl: nil, isLocked: true)
-                        }
-                    }
-                    
-                    if currentWeek.isOpen, mySelections.count < (currentWeek.maxPicksPerMember ?? 1) {
-                        Button {
-                            if let myMember = currentUserMember {
-                                addPickSelection = Selection(
-                                    id: UUID(),
-                                    accaId: currentWeek.id,
-                                    memberId: myMember.id,
-                                    teamName: "Pending",
-                                    league: "",
-                                    outcome: .pending,
-                                    odds: 0.0
-                                )
-                            }
-                        } label: {
-                            Text("Add another pick")
-                                .font(.subheadline)
-                                .foregroundColor(.blue)
-                        }
-                    }
-                } else {
-                    Text("you are not included in this acca")
-                        .foregroundStyle(.secondary)
-                }
-            }
-            
-            // MARK: - Member Picks Section
-            Section("Member Picks") {
-                if memberSelections.isEmpty {
-                    Text("No other members")
-                        .foregroundStyle(.secondary)
-                        .italic()
-                } else {
-                    ForEach(memberSelections, id: \.member.id) { item in
-                        Group {
-                            if !item.selections.isEmpty {
-                                ForEach(sortedSelections(item.selections)) { selection in
-                                    CopyableSelectionRow(
-                                        selection: selection,
-                                        memberName: item.member.name,
-                                        avatarUrl: item.avatarUrl,
-                                        isLocked: !currentWeek.isOpen,
-                                        showCopyIcon: selection.teamName != "Pending" && isAccaOwner
-                                    )
-                                }
-                            } else {
-                                HStack(spacing: 12) {
-                                    ProfileImage(url: item.avatarUrl, size: 32)
-                                    Text("\(item.member.name)\(badgeManager.emoji(for: item.member.id, context: .general).map { " \($0)" } ?? "")")
-                                        .font(.subheadline)
-                                    Spacer()
-                                    Text("No Pick")
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                }
-                            }
-                        }
-                        .contentShape(Rectangle())
-                        .onTapGesture {
-                            if SupabaseService.shared.currentUserId == group.adminId {
-                                selectedMemberForAdmin = item
-                            }
-                        }
-                    }
-                }
-            }
+            weekSummarySection
+            myPickSection
+            memberPicksSection
         }
         .navigationTitle(currentWeek.title)
         .navigationDestination(item: $addPickSelection) { sel in
@@ -971,6 +757,17 @@ var body: some View {
         }, message: {
             Text(errorMessage)
         })
+        .alert("Paid Selection", isPresented: $showingPaidDeleteAlert, actions: {
+            Button("Delete anyway", role: .destructive) {
+                guard let sel = selectionPendingDelete else { return }
+                performDeleteOrReset(sel)
+            }
+            Button("Cancel", role: .cancel) {
+                selectionPendingDelete = nil
+            }
+        }, message: {
+            Text("This selection is marked as paid. Deleting it will also remove the payment record.")
+        })
         .sheet(item: $selectedMemberForAdmin) { memberDisplay in
             MemberProfileView(
                 member: memberDisplay.member,
@@ -980,11 +777,286 @@ var body: some View {
                 selections: memberDisplay.selections,
                 onUpdateRow: {
                     Task { await loadData() }
-                }
+                },
+                allMemberSelections: memberSelections
             )
+            .environmentObject(badgeManager)
         }
     }
-    
+
+    // MARK: - Extracted Sections
+
+    @ViewBuilder
+    private var weekSummarySection: some View {
+        Section {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack {
+                    Text("Status")
+                    Spacer()
+                    if liveStatus == .pending {
+                        if currentWeek.isOpen {
+                            StatusBadge(status: .pending, label: "Open", color: .blue)
+                        } else {
+                            StatusBadge(status: .pending, label: "In Progress", color: .orange)
+                        }
+                    } else {
+                        StatusBadge(status: liveStatus)
+                    }
+                }
+
+                if currentWeek.isOpen {
+                    HStack(spacing: 6) {
+                        Image(systemName: "lock")
+                            .foregroundStyle(.secondary)
+                            .frame(width: 16)
+                        Text("Picks lock on \(formatLockDate(currentWeek.startDate))")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    let currentStake = currentWeek.stakePerPick ?? group.stakePerPerson
+                    HStack(spacing: 6) {
+                        Image(systemName: "banknote")
+                            .foregroundStyle(.secondary)
+                            .frame(width: 16)
+                        Text("Stake is £\(String(format: "%.2f", currentStake)) per pick")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                HStack(spacing: 6) {
+                    Image(systemName: "list.bullet.clipboard")
+                        .foregroundStyle(.secondary)
+                        .frame(width: 16)
+                    Text("\(membersWithPicksCount)/\(totalMembersCount) members have made a pick")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                HStack(spacing: 6) {
+                    Image(systemName: "sterlingsign.circle")
+                        .foregroundStyle(.secondary)
+                        .frame(width: 16)
+                    Text("\(membersPaidCount)/\(totalMembersCount) members paid")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                if let name = creatorName {
+                    HStack(spacing: 6) {
+                        Image(systemName: "person.fill")
+                            .foregroundStyle(.secondary)
+                            .frame(width: 16)
+                        Text("\(name) \(name == "You" ? "are" : "is") the acca owner")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                if liveStatus == .pending && !currentWeek.isOpen {
+                    HStack(spacing: 6) {
+                        Image(systemName: "arrow.up.right.circle")
+                            .foregroundStyle(.secondary)
+                            .frame(width: 16)
+                        Text("The total stake is £\(String(format: "%.2f", totalStake)) and the estimate return is £\(String(format: "%.2f", potentialWinnings))")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+            .padding(.vertical, 2)
+
+            if !mySelections.isEmpty && !mySelections.contains(where: { $0.teamName == "Pending" }) {
+                HStack {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Payment Confirmation")
+                            .font(.headline)
+                        let currentStake = currentWeek.stakePerPick ?? group.stakePerPerson
+                        let totalStakeCost = currentStake * Double(mySelections.count)
+                        Text("I have paid my £\(String(format: "%.2f", totalStakeCost)) stake")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+
+                    let isPaid = mySelections.first?.isPaid ?? false
+                    Button {
+                        togglePaymentStatus(to: !isPaid)
+                    } label: {
+                        Image(systemName: isPaid ? "checkmark.circle.fill" : "circle")
+                            .font(.title2)
+                            .foregroundStyle(isPaid ? .green : .gray)
+                            .accessibilityLabel(isPaid ? "Payment confirmed" : "Mark as paid")
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(isUpdatingPayment)
+                }
+                .padding(.vertical, 4)
+
+                if let monzoUser = currentWeek.monzoUsername, !monzoUser.isEmpty, monzoUser != myMonzoUsername {
+                    let currentStake = currentWeek.stakePerPick ?? group.stakePerPerson
+                    let totalStakeCost = currentStake * Double(mySelections.count)
+
+                    Button {
+                        let urlString = "https://monzo.me/\(monzoUser)/\(String(format: "%.2f", totalStakeCost))"
+                        if let url = URL(string: urlString) {
+                            UIApplication.shared.open(url)
+                        }
+                    } label: {
+                        HStack {
+                            Spacer()
+                            Image(systemName: "sterlingsign.circle.fill")
+                            let ownerName = creatorName ?? "Owner"
+                            Text("Pay \(ownerName) £\(String(format: "%.2f", totalStakeCost)) via Monzo")
+                                .fontWeight(.semibold)
+                            Spacer()
+                        }
+                        .padding()
+                        .background(Color.accentColor.opacity(0.15))
+                        .foregroundStyle(Color.accentColor)
+                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.bottom, 4)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var myPickSection: some View {
+        // MARK: - My Pick Section
+        Section("My Pick\(mySelections.count > 1 ? "s" : "")") {
+            if !mySelections.isEmpty {
+                ForEach(sortedSelections(mySelections)) { selection in
+                    if currentWeek.isOpen {
+                        Button {
+                            addPickSelection = selection
+                        } label: {
+                            SelectionRow(selection: selection, memberName: nil, avatarUrl: nil, isLocked: false)
+                        }
+                        .buttonStyle(.plain)
+                        .swipeActions(allowsFullSwipe: false) {
+                            if selection.teamName != "Pending" {
+                                Button(role: .destructive) {
+                                    deleteMySelection(selection)
+                                } label: {
+                                    Label("Delete", systemImage: "trash")
+                                }
+                            }
+                        }
+                    } else {
+                        SelectionRow(selection: selection, memberName: nil, avatarUrl: nil, isLocked: true)
+                    }
+                }
+            } else {
+                Text("you are not included in this acca")
+                    .foregroundStyle(.secondary)
+            }
+
+            if currentWeek.isOpen, mySelections.count < (currentWeek.maxPicksPerMember ?? 1) {
+                Button {
+                    if let myMember = currentUserMember {
+                        addPickSelection = Selection(
+                            id: UUID(),
+                            accaId: currentWeek.id,
+                            memberId: myMember.id,
+                            teamName: "Pending",
+                            league: "",
+                            outcome: .pending,
+                            odds: 0.0
+                        )
+                    }
+                } label: {
+                    Text("Add another pick")
+                        .font(.subheadline)
+                        .foregroundColor(.blue)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var memberPicksSection: some View {
+        // MARK: - Member Picks Section
+        Section("Member Picks") {
+            if memberSelections.isEmpty {
+                Text("No other members")
+                    .foregroundStyle(.secondary)
+                    .italic()
+            } else {
+                ForEach(memberSelections, id: \.member.id) { item in
+                    Group {
+                        if !item.selections.isEmpty {
+                            ForEach(sortedSelections(item.selections)) { selection in
+                                CopyableSelectionRow(
+                                    selection: selection,
+                                    memberName: item.member.name,
+                                    avatarUrl: item.avatarUrl,
+                                    isLocked: !currentWeek.isOpen,
+                                    showCopyIcon: selection.teamName != "Pending" && isAccaOwner
+                                )
+                            }
+                        } else {
+                            HStack(spacing: 12) {
+                                ProfileImage(url: item.avatarUrl, size: 32)
+                                Text("\(item.member.name)\(badgeManager.emoji(for: item.member.id, context: .general).map { " \($0)" } ?? "")")
+                                    .font(.subheadline)
+                                Spacer()
+                                Text("No Pick")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        if SupabaseService.shared.currentUserId == group.adminId ||
+                           SupabaseService.shared.currentUserId == currentWeek.creatorId {
+                            selectedMemberForAdmin = item
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private func deleteMySelection(_ selection: Selection) {
+        if selection.isPaid {
+            selectionPendingDelete = selection
+            showingPaidDeleteAlert = true
+        } else {
+            performDeleteOrReset(selection)
+        }
+    }
+
+    private func performDeleteOrReset(_ selection: Selection) {
+        let original = selections
+        Task {
+            do {
+                if mySelections.count == 1 {
+                    var reset = selection
+                    reset.teamName = "Pending"
+                    reset.league = ""
+                    reset.outcome = .pending
+                    reset.odds = 0.0
+                    reset.leagueId = nil
+                    selections = selections.map { $0.id == selection.id ? reset : $0 }
+                    try await SupabaseService.shared.saveSelection(reset)
+                } else {
+                    selections = selections.filter { $0.id != selection.id }
+                    try await SupabaseService.shared.deleteSelection(id: selection.id)
+                }
+                await loadData()
+            } catch {
+                selections = original
+                errorMessage = "Failed to delete pick."
+                showingErrorAlert = true
+            }
+        }
+    }
+
     private func loadData() async {
         isLoading = true
         do {
