@@ -6,6 +6,7 @@ struct MatchSelectionView: View {
     @State var selection: Selection
     let week: Week? // Pass explicitly
     let memberSelections: [MemberSelectionDisplay]
+    let onBehalfOfName: String?
     
     @State private var selectedDate: Date = Date()
     @State private var fixtures: [Competition: [Fixture]] = [:]
@@ -47,14 +48,11 @@ struct MatchSelectionView: View {
     // Pick Validation State
     @State private var showDuplicateError = false
     @State private var duplicateErrorMessage = ""
-    @State private var showFixtureWarning = false
-    @State private var fixtureWarningMessage = ""
-    @State private var pendingSelectionCache: (Fixture, String, Double, String?)?
-    
-    init(selection: Selection, week: Week? = nil, memberSelections: [MemberSelectionDisplay] = []) {
+    init(selection: Selection, week: Week? = nil, memberSelections: [MemberSelectionDisplay] = [], onBehalfOfName: String? = nil) {
         self._selection = State(initialValue: selection)
         self.week = week
         self.memberSelections = memberSelections
+        self.onBehalfOfName = onBehalfOfName
     }
     
     // Generate dates based on Week constraints
@@ -138,6 +136,18 @@ struct MatchSelectionView: View {
     @ViewBuilder
     private var mainContent: some View {
         VStack(spacing: 0) {
+            if let name = onBehalfOfName {
+                HStack(spacing: 8) {
+                    Image(systemName: "person.fill")
+                        .font(.subheadline)
+                    Text("Picking on behalf of \(name)")
+                        .font(.subheadline)
+                        .fontWeight(.bold)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 6)
+            }
             // Date Tabs
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 12) {
@@ -442,6 +452,13 @@ struct MatchSelectionView: View {
                         Image(systemName: "magnifyingglass")
                     }
                 }
+                if onBehalfOfName != nil {
+                    ToolbarItem(placement: .topBarLeading) {
+                        Button("Cancel") {
+                            dismiss()
+                        }
+                    }
+                }
             }
             .sheet(isPresented: $isSearchPresented) {
                 TeamSearchView(
@@ -466,18 +483,6 @@ struct MatchSelectionView: View {
                 Button("OK", role: .cancel) { }
             } message: {
                 Text(duplicateErrorMessage)
-            }
-            .alert("Same Match Picked", isPresented: $showFixtureWarning) {
-                Button("Cancel", role: .cancel) {
-                    pendingSelectionCache = nil
-                }
-                Button("Continue") {
-                    if let cache = pendingSelectionCache {
-                        confirmSelection(fixture: cache.0, team: cache.1, odds: cache.2, logo: cache.3)
-                    }
-                }
-            } message: {
-                Text(fixtureWarningMessage)
             }
             .onAppear {
                 // Ensure selectedDate is within range
@@ -906,12 +911,20 @@ struct MatchSelectionView: View {
                 // Filter to picks made by *other* members
                 let otherMembersPicks = allSelections.filter { $0.memberId != selection.memberId }
                 
-                // 0. Check own picks for duplicate team name
+                // 0. Check own picks for duplicate team name or duplicate fixture
                 let myOtherPicks = allSelections.filter { $0.memberId == selection.memberId && $0.id != selection.id }
                 if myOtherPicks.contains(where: { $0.teamName == team }) {
                     await MainActor.run {
                         isLoading = false
                         duplicateErrorMessage = "\(team) has already been selected in this acca. Please make a different pick."
+                        showDuplicateError = true
+                    }
+                    return
+                }
+                if myOtherPicks.contains(where: { $0.fixtureId == fixture.apiId }) {
+                    await MainActor.run {
+                        isLoading = false
+                        duplicateErrorMessage = "You've already selected a team from this fixture in this acca. Please pick from a different match."
                         showDuplicateError = true
                     }
                     return
@@ -927,15 +940,12 @@ struct MatchSelectionView: View {
                     return
                 }
                 
-                // 2. Check for Same Fixture Warning
-                if let sameFixturePick = otherMembersPicks.first(where: { $0.fixtureId == fixture.apiId }) {
+                // 2. Check for Same Fixture (hard block)
+                if otherMembersPicks.contains(where: { $0.fixtureId == fixture.apiId }) {
                     await MainActor.run {
                         isLoading = false
-                        let home = sameFixturePick.homeTeamName ?? "Home"
-                        let away = sameFixturePick.awayTeamName ?? "Away"
-                        fixtureWarningMessage = "Another member has already chosen a pick from this match (\(home) vs \(away)). Are you sure you want to proceed?"
-                        pendingSelectionCache = (fixture, team, odds, logo)
-                        showFixtureWarning = true
+                        duplicateErrorMessage = "Another member has already selected a team from this fixture. Each fixture can only appear once in an acca."
+                        showDuplicateError = true
                     }
                     return
                 }
@@ -979,7 +989,6 @@ struct MatchSelectionView: View {
                 
                 await MainActor.run {
                     isLoading = false
-                    pendingSelectionCache = nil
                     dismiss()
                 }
             } catch {
